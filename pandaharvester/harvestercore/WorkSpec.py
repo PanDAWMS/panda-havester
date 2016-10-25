@@ -54,7 +54,7 @@ class WorkSpec(SpecBase):
                            'startTime:timestamp',
                            'endTime:timestamp',
                            'nCore:integer',
-                           'walltime:timestamp',
+                           'walltime:timestamp', # should it be integer?
                            'accessPoint:text',
                            'modificationTime:timestamp',
                            'stateChangeTime:timestamp',
