@@ -2,11 +2,10 @@
 #
 # chkconfig: - 85 15
 #
-# description: Panda JEDI
+# description: Panda Harvester
 # processname: python
-# config: /etc/sysconfig/panda_server
-# config: /etc/sysconfig/panda_jedi
-# pidfile: /var/log/panda/panda_jedi.pid
+# config: /etc/sysconfig/panda_harvester
+# pidfile: /var/run/panda_harvester.pid
 
 # When multiple arguments are given, only the error from the _last_
 # one is reported.
@@ -17,15 +16,14 @@ ARGV="$@"
 # --------------------                              --------------------
 # 
 # the path to application
-PROGNAME='python -u @@install_purelib@@/pandajedi/jediorder/JediMaster.py'
+PROGNAME='python -u @@install_purelib@@/pandaharvester/harvesterbody/master.py'
 
 # pid and lock files
-PIDFILE='/var/log/panda/panda_jedi.pid'
-LOCKFILE='/var/lock/subsys/panda_jedi'
+PIDFILE='/var/run/panda_harvester.pid'
+LOCKFILE='/var/lock/subsys/panda_harvester'
 
 # log files
-JEDISTDOUT='/var/log/panda/panda_jedi_stdout.log'
-JEDISTDERR='/var/log/panda/panda_jedi_stderr.log'
+CONSOLELOG=$HARVESTER_HOME/log/console.log
 
 # Source panda server env variables
 if [ -r /etc/sysconfig/panda_server ]; then
