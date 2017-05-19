@@ -13,8 +13,7 @@ class APFGridSubmitter(PluginBase):
     # constructor
     def __init__(self, **kwarg):
         PluginBase.__init__(self, **kwarg)
-        apf = autopyfactory.APFQueuesManager(config)
-
+        
 
     # submit workers
     def submit_workers(self, workspec_list):
