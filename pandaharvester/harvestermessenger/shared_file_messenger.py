@@ -9,42 +9,51 @@ from pandaharvester.harvestercore.work_spec import WorkSpec
 from pandaharvester.harvestercore.file_spec import FileSpec
 from pandaharvester.harvestercore.event_spec import EventSpec
 from pandaharvester.harvestercore.plugin_base import PluginBase
+from pandaharvester.harvesterconfig import harvester_config
+
+# json for worker attributes
+jsonAttrsFileName = harvester_config.payload_interaction.workerAttributesFile
+
+# json for job report
+jsonJobReport = harvester_config.payload_interaction.jobReportFile
+
+# json for outputs
+jsonOutputsFileName = harvester_config.payload_interaction.eventStatusDumpJsonFile
+
+# xml for outputs
+xmlOutputsBaseFileName = harvester_config.payload_interaction.eventStatusDumpXmlFile
+
+# json for job request
+jsonJobRequestFileName = harvester_config.payload_interaction.jobRequestFile
+
+# json for job spec
+jsonJobSpecFileName = harvester_config.payload_interaction.jobSpecFile
+
+# json for event request
+jsonEventsRequestFileName = harvester_config.payload_interaction.eventRequestFile
+
+# json to feed events
+jsonEventsFeedFileName = harvester_config.payload_interaction.eventRangesFile
+
+# json to update events
+jsonEventsUpdateFileName = harvester_config.payload_interaction.updateEventsFile
+
+# PFC for input files
+xmlPoolCatalogFileName = harvester_config.payload_interaction.xmlPoolCatalogFile
+
+# json to get PandaIDs
+pandaIDsFile = harvester_config.payload_interaction.pandaIDsFile
+
+# suffix to read json
+suffixReadJson = '.read'
 
 # logger
 _logger = core_utils.setup_logger()
 
-# json for worker attributes
-jsonAttrsFileName = 'worker_attributes.json'
 
-# json for job report
-jsonJobReport = 'jobReport.json'
-
-# json for outputs
-jsonOutputsFileName = 'event_status.dump.json'
-
-# xml for outputs
-xmlOutputsBaseFileName = '_event_status.dump'
-
-# json for job request
-jsonJobRequestFileName = 'worker_requestjob.json'
-
-# json for job spec
-jsonJobSpecFileName = 'HPCJobs.json'
-
-# json for event request
-jsonEventsRequestFileName = 'worker_requestevents.json'
-
-# json to feed events
-jsonEventsFeedFileName = 'JobsEventRanges.json'
-
-# json to update events
-jsonEventsUpdateFileName = 'worker_updateevents.json'
-
-# PFC for input files
-xmlPoolCatalogFileName = 'PoolFileCatalog_H.xml'
-
-# suffix to read json
-suffixReadJson = '.read'
+def set_logger(master_logger):
+    global _logger
+    _logger = master_logger
 
 
 # messenger with shared file system
@@ -155,7 +164,7 @@ class SharedFileMessenger(PluginBase):
             if os.path.exists(readJsonPath):
                 pass
             else:
-                tmpLog.debug('looking for event update file {0}'.format(jsonFilePath))
+                tmpLog.debug('looking for output file {0}'.format(jsonFilePath))
                 if not os.path.exists(jsonFilePath):
                     # not found
                     tmpLog.debug('not found')
@@ -175,9 +184,13 @@ class SharedFileMessenger(PluginBase):
                 return {}
             # collect files and events
             eventsList = dict()
-            for tmpPandaID, tmpEventMap in loadDict.iteritems():
+            for tmpPandaID, tmpEventMapList in loadDict.iteritems():
                 tmpPandaID = long(tmpPandaID)
-                for tmpEventRangeID, tmpEventInfo in tmpEventMap.iteritems():
+                for tmpEventInfo in tmpEventMapList:
+                    if 'eventRangeID' in tmpEventInfo:
+                        tmpEventRangeID = tmpEventInfo['eventRangeID']
+                    else:
+                        tmpEventRangeID = None
                     tmpFileDict = dict()
                     pfn = tmpEventInfo['path']
                     lfn = os.path.basename(pfn)
@@ -256,6 +269,10 @@ class SharedFileMessenger(PluginBase):
                 for inLFN, inFile in inFiles.iteritems():
                     dstPath = os.path.join(workspec.get_access_point(), inLFN)
                     if inFile['path'] != dstPath:
+                        # test if symlink exists if so remove it
+                        if os.path.exists(dstPath) :
+                            os.unlink(dstPath)
+                            tmpLog.debug("removing existing symlink %s" % dstPath)
                         os.symlink(inFile['path'], dstPath)
             except:
                 core_utils.dump_error_message(tmpLog)
@@ -424,7 +441,28 @@ class SharedFileMessenger(PluginBase):
                                                              'isZip': 0}
             jsonFilePath = os.path.join(workspec.get_access_point(), jsonOutputsFileName)
             with open(jsonFilePath, 'w') as jsonFile:
-                json.dump(fileDict, jsonFile)
+                json.dump([fileDict], jsonFile)
         else:
             # FIXME
             pass
+
+    # tell PandaIDs for pull model
+    def get_panda_ids(self, workspec):
+        # get logger
+        tmpLog = core_utils.make_logger(_logger, 'workerID={0}'.format(workspec.workerID))
+        # look for the json just under the access point
+        jsonFilePath = os.path.join(workspec.get_access_point(), pandaIDsFile)
+        tmpLog.debug('looking for PandaID file {0}'.format(jsonFilePath))
+        retVal = []
+        if not os.path.exists(jsonFilePath):
+            # not found
+            tmpLog.debug('not found')
+            return retVal
+        try:
+            with open(jsonFilePath) as jsonFile:
+                retVal = json.load(jsonFile)
+        except:
+            tmpLog.debug('failed to load json')
+            return retVal
+        tmpLog.debug('found')
+        return retVal
