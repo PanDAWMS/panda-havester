@@ -8,6 +8,8 @@ class APFGridMonitor(PluginBase):
     # constructor
     def __init__(self, **kwarg):
         PluginBase.__init__(self, **kwarg)
+        self.log = core_utils.make_logger(baseLogger)
+        self.log.debug('APFGridSubmitter initialized.')
 
     # check workers
     def check_workers(self, workspec_list):
@@ -23,10 +25,12 @@ class APFGridMonitor(PluginBase):
         """
         retList = []
         for workSpec in workspec_list:
+            self.log.debug('workspec=%s' % workSpec)
             dummyFilePath = os.path.join(workSpec.get_access_point(), 'status.txt')
-            newStatus = WorkSpec.ST_finished
+            newStatus = WorkSpec.ST_submitted
             with open(dummyFilePath) as dummyFile:
                 newStatus = dummyFile.readline()
                 newStatus = newStatus.strip()
             retList.append((newStatus, ''))
+        self.log.debug('retList=%s' % retList)
         return True, retList

@@ -13,6 +13,8 @@ class APFGridSubmitter(PluginBase):
     # constructor
     def __init__(self, **kwarg):
         PluginBase.__init__(self, **kwarg)
+        self.log = core_utils.make_logger(baseLogger)
+        self.log.debug('APFGridSubmitter initialized.')
         
 
     # submit workers
@@ -30,17 +32,16 @@ class APFGridSubmitter(PluginBase):
         :return: A list of tuples. Each tuple is composed of submission status (True for success, False otherwise)
         and dialog message
         :rtype: [(bool, string),]
+        
         """
-        tmpLog = core_utils.make_logger(baseLogger)
-        tmpLog.debug('start nWorkers={0}'.format(len(workspec_list)))
+        self.log.debug('start nWorkers={0}'.format(len(workspec_list)))
         retList = []
         for workSpec in workspec_list:
             if workSpec.get_jobspec_list() is not None:
                 for jobSpec in workSpec.get_jobspec_list():
-                    tmpLog.debug('PandaID={0} nCore={1} RAM={2}'.format(jobSpec.PandaID,
+                    self.log.debug('PandaID={0} nCore={1} RAM={2}'.format(jobSpec.PandaID,
                                                                         jobSpec.jobParams['coreCount'],
                                                                         jobSpec.jobParams['minRamCount']))
             workSpec.batchID = uuid.uuid4().hex
             retList.append((True, ''))
-        tmpLog.debug('done')
         return retList
