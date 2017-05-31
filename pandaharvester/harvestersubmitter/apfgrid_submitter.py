@@ -38,6 +38,7 @@ class APFGridSubmitter(PluginBase):
         retList = []
         for workSpec in workspec_list:
             if workSpec.get_jobspec_list() is not None:
+                self.log.debug("workSpec=%s " % workSpec)
                 for jobSpec in workSpec.get_jobspec_list():
                     self.log.debug('PandaID={0} nCore={1} RAM={2}'.format(jobSpec.PandaID,
                                                                         jobSpec.jobParams['coreCount'],
