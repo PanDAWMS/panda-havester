@@ -2,6 +2,8 @@ import os.path
 from pandaharvester.harvestercore.work_spec import WorkSpec
 from pandaharvester.harvestercore.plugin_base import PluginBase
 
+from pandaharvester.harvestersubmitter.apfgrid_submitter import APFGridSubmitter
+
 
 # dummy monitor
 class APFGridMonitor(PluginBase):
@@ -23,14 +25,21 @@ class APFGridMonitor(PluginBase):
         :return: A tuple of return code (True for success, False otherwise) and a list of worker's statuses.
         :rtype: (bool, [string,])
         """
+        current = APFGridSubmitter.workers
+        
         retList = []
         for workSpec in workspec_list:
             self.log.debug('workspec=%s' % workSpec)
-            dummyFilePath = os.path.join(workSpec.get_access_point(), 'status.txt')
-            newStatus = WorkSpec.ST_submitted
-            with open(dummyFilePath) as dummyFile:
-                newStatus = dummyFile.readline()
-                newStatus = newStatus.strip()
-            retList.append((newStatus, ''))
+            self.log.debug("workerID=%s" % workSpec.workerID)    
+            found = False
+            for ws in current:
+                if ws.workerID == workSpec.workerID:
+                    self.log.debug("Found matching worker: %s with ID %s" % (ws, ws.workerID))
+                    found = True
+                    retlist.append((ws.status, ''))
+            if not found:
+                retList.append((newStatus, ''))
         self.log.debug('retList=%s' % retList)
         return True, retList
+
+    
