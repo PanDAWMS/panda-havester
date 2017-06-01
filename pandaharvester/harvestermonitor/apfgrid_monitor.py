@@ -11,7 +11,7 @@ class APFGridMonitor(PluginBase):
     def __init__(self, **kwarg):
         PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
-        self.log.debug('APFGridSubmitter initialized.')
+        self.log.debug('APFGridMonitor initialized.')
 
     # check workers
     def check_workers(self, workspec_list):
