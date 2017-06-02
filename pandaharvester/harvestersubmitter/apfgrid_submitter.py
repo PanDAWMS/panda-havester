@@ -44,11 +44,12 @@ class APFGridSubmitter(PluginBase):
         cp.set('Factory','config.agis.sleep', '3600')
         cp.set('Factory','config.agis.vos','atlas')
         cp.set('Factory','config.agis.clouds','US')
-        cp.set('Factory','config.agis.activities','production,analysis')
+        cp.set('Factory','config.agis.activities','production')
         cp.set('Factory','config.agis.jobsperpilot','1.5')
         cp.set('Factory','config.agis.numfactories','1')
         
         agisobj = Agis(None, cp, None)
+        self.log.debug("AGIS object: %s" % agisobj)
         self.log.debug('Calling AGIS getConfig()...')
         qc = agisobj.getConfig()
         self.log.debug('qc=%s' % qc)
