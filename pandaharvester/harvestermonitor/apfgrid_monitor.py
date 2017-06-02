@@ -4,6 +4,8 @@ from pandaharvester.harvestercore.plugin_base import PluginBase
 
 from pandaharvester.harvestersubmitter.apfgrid_submitter import APFGridSubmitter
 
+
+
 # setup base logger
 baseLogger = core_utils.setup_logger()
 
@@ -13,7 +15,12 @@ class APFGridMonitor(PluginBase):
     def __init__(self, **kwarg):
         PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
+              
+        
         self.log.debug('APFGridMonitor initialized.')
+        
+        
+        
 
     # check workers
     def check_workers(self, workspec_list):
