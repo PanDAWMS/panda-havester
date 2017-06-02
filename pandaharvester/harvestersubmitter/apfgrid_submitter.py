@@ -1,21 +1,23 @@
-
 import uuid
 
 from pandaharvester.harvestercore import core_utils
 from pandaharvester.harvestercore.plugin_base import PluginBase
+from pandaharvester.harvestercore.work_spec import WorkSpec
 
 # setup base logger
 baseLogger = core_utils.setup_logger()
 
 
-# dummy submitter
 class APFGridSubmitter(PluginBase):
+    
+    workers = []
+    
+    
     # constructor
     def __init__(self, **kwarg):
         PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
-        self.log.debug('APFGridSubmitter initialized.')
-        
+        self.log.debug('APFGridSubmitter initialized.')       
 
     # submit workers
     def submit_workers(self, workspec_list):
@@ -37,10 +39,12 @@ class APFGridSubmitter(PluginBase):
         self.log.debug('start nWorkers={0}'.format(len(workspec_list)))
         retList = []
         for workSpec in workspec_list:
-            if workSpec.get_jobspec_list() is not None:
-                self.log.debug("Worker(workerId=%s queueName=%s status=%s " % (workSpec.workerID, 
+            self.log.debug("Worker(workerId=%s queueName=%s status=%s " % (workSpec.workerID, 
                                                                                workSpec.queueName, 
                                                                                workSpec.status) )
             workSpec.batchID = uuid.uuid4().hex
+            workSpec.set_status(WorkSpec.ST_submitted)
+            APFGridSubmitter.workers.append(workSpec)
             retList.append((True, ''))
+            self.log.debug("return list=%s " % retList)
         return retList
