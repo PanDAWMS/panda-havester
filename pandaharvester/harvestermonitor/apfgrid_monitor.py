@@ -29,8 +29,9 @@ class APFGridMonitor(PluginBase):
         
         retList = []
         for workSpec in workspec_list:
-            self.log.debug("Worker(workerId=%s queueName=%s status=%s " % (workSpec.workerID, 
-                                                                               workSpec.queueName, 
+            self.log.debug("Worker(workerId=%s queueName=%s computingStie status=%s " % (workSpec.workerID, 
+                                                                               workSpec.queueName,
+                                                                               workSpec.computingSite, 
                                                                                workSpec.status) )
             dummyFilePath = os.path.join(workSpec.get_access_point(), 'status.txt')
             newStatus = WorkSpec.ST_submitted
