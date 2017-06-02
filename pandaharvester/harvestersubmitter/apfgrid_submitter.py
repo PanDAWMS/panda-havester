@@ -39,7 +39,7 @@ class APFGridSubmitter(PluginBase):
         self.log.debug('start nWorkers={0}'.format(len(workspec_list)))
         retList = []
         for workSpec in workspec_list:
-            self.log.debug("Worker(workerId=%s queueName=%s computingStie status=%s " % (workSpec.workerID, 
+            self.log.debug("Worker(workerId=%s queueName=%s computingSite=%s status=%s " % (workSpec.workerID, 
                                                                                workSpec.queueName,
                                                                                workSpec.computingSite, 
                                                                                workSpec.status) )
