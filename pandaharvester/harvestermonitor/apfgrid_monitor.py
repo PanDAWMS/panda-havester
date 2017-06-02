@@ -1,4 +1,4 @@
-import os.path
+from pandaharvester.harvestercore import core_utils
 from pandaharvester.harvestercore.work_spec import WorkSpec
 from pandaharvester.harvestercore.plugin_base import PluginBase
 
@@ -33,7 +33,6 @@ class APFGridMonitor(PluginBase):
                                                                                workSpec.queueName,
                                                                                workSpec.computingSite, 
                                                                                workSpec.status) )
-            dummyFilePath = os.path.join(workSpec.get_access_point(), 'status.txt')
             newStatus = WorkSpec.ST_submitted
 
             found = False

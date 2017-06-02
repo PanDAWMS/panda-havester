@@ -12,7 +12,6 @@ class APFGridSubmitter(PluginBase):
     
     workers = []
     
-    
     # constructor
     def __init__(self, **kwarg):
         PluginBase.__init__(self, **kwarg)
