@@ -29,7 +29,7 @@ class APFGridMonitor(PluginBase):
         """
         current = APFGridSubmitter.workers
         self.log.debug("%s workers in current status %s workers in workspec_list" % (len(current), len(workspec_list)))
-        retList = []
+        retlist = []
         for workSpec in workspec_list:
             self.log.debug("Worker(workerId=%s queueName=%s computingSite=%s status=%s )" % (workSpec.workerID, 
                                                                                workSpec.queueName,
@@ -43,8 +43,8 @@ class APFGridMonitor(PluginBase):
                     found = True
                     retlist.append((worker.status, ''))
             if not found:
-                retList.append((newStatus, ''))
-        self.log.debug('retList=%s' % retList)
-        return True, retList
+                retlist.append((newStatus, ''))
+        self.log.debug('retlist=%s' % retlist)
+        return True, retlist
 
     
