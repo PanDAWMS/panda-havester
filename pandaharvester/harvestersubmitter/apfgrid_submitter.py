@@ -40,10 +40,11 @@ class APFGridSubmitter(PluginBase):
         cp.add_section('Factory')
         cp.set('Factory','config.agis.baseurl','http://atlas-agis-api.cern.ch/request/pandaqueue/query/list/?json&preset=schedconf.all')
         df = os.path.expanduser('~/harvester/etc/autopyfactory/agisdefaults.conf')
+        cp.set('Factory','config.agis.defaultsfiles', df)
         cp.set('Factory','config.agis.sleep', '3600')
         cp.set('Factory','config.agis.vos','atlas')
         cp.set('Factory','config.agis.clouds','US')
-        cp.set('Factory','config.agis.activities','production')
+        cp.set('Factory','config.agis.activities','production,analysis')
         cp.set('Factory','config.agis.jobsperpilot','1.5')
         cp.set('Factory','config.agis.numfactories','1')
         
