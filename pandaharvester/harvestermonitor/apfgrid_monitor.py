@@ -40,6 +40,7 @@ class APFGridMonitor(PluginBase):
 
             found = False
             for worker in current:
+                found = False
                 if worker.workerID == workSpec.workerID:
                     self.log.debug("Found matching worker: %s with ID %s" % (worker, worker.workerID))
                     found = True
