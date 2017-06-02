@@ -28,8 +28,7 @@ class APFGridMonitor(PluginBase):
         :rtype: (bool, [string,])
         """
         current = APFGridSubmitter.workers
-        self.log.debug("%s workers in current status" % len(current))
-        
+        self.log.debug("%s workers in current status %s workers in workspec_list" % (len(current), len(workspec_list)))
         retList = []
         for workSpec in workspec_list:
             self.log.debug("Worker(workerId=%s queueName=%s computingSite=%s status=%s )" % (workSpec.workerID, 
@@ -37,10 +36,8 @@ class APFGridMonitor(PluginBase):
                                                                                workSpec.computingSite, 
                                                                                workSpec.status) )
             newStatus = WorkSpec.ST_submitted
-
             found = False
             for worker in current:
-                found = False
                 if worker.workerID == workSpec.workerID:
                     self.log.debug("Found matching worker: %s with ID %s" % (worker, worker.workerID))
                     found = True
