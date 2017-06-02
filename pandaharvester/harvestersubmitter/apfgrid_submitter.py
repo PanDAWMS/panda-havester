@@ -11,7 +11,7 @@ baseLogger = core_utils.setup_logger()
 
 
 from autopyfactory.plugins.factory.config.Agis import Agis
-from ConfigParser import ConfigParser, SafeConfigParser
+from autopyfactory.configloader import Config
 
 
 
@@ -36,7 +36,7 @@ class APFGridSubmitter(PluginBase):
         #config.agis.jobsperpilot = 1.5
         #config.agis.numfactories = 4
         
-        cp = ConfigParser()
+        cp = Config()
         cp.add_section('Factory')
         cp.set('Factory','config.agis.baseurl','http://atlas-agis-api.cern.ch/request/pandaqueue/query/list/?json&preset=schedconf.all')
         df = os.path.expanduser('~/harvester/etc/autopyfactory/agisdefaults.conf')
