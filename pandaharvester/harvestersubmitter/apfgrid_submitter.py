@@ -47,9 +47,9 @@ class APFGridSubmitter(PluginBase):
         
         self.agisobj = Agis(None, cp, None)
         self.log.debug("AGIS object: %s" % self.agisobj)
-        self.log.debug('Calling AGIS getConfig()...')
-        qc = self.agisobj.getConfig()
-        self.log.debug('%s' % self._print_config(qc))
+        #self.log.debug('Calling AGIS getConfig()...')
+        #qc = self.agisobj.getConfig()
+        #self.log.debug('%s' % self._print_config(qc))
         self.log.debug('APFGridSubmitter initialized.')       
 
 
@@ -81,17 +81,34 @@ class APFGridSubmitter(PluginBase):
         self.log.debug('start nWorkers={0}'.format(len(workspec_list)))
         self.log.debug("Update AGIS info...")
         qc = self.agisobj.getConfig()
-        self.log.debug('%s' % self._print_config(qc))
-                
-        retList = []
+        #self.log.debug('%s' % self._print_config(qc))
+        
+        retlist = []
+        pqset = Set()
+        
         for workSpec in workspec_list:
-            self.log.debug("Worker(workerId=%s queueName=%s computingSite=%s status=%s " % (workSpec.workerID, 
+            self.log.debug("Worker(workerId=%s queueName=%s computingSite=%s nCore=%s status=%s " % (workSpec.workerID, 
                                                                                workSpec.queueName,
-                                                                               workSpec.computingSite, 
+                                                                               workSpec.computingSite,
+                                                                               workSpec.nCore, 
                                                                                workSpec.status) )
+            
+            #
+            nclist = [] 
+            for s in gc.sections():
+                if gc.get(s, 'wmsqueue') == workSpec.computingSite:
+                    pqname = workSpec.computingSite
+                    pqset.add(pqname)
+                    #nc = gc.getSection(s)
+                    #nclist.append(nc)
+                    #self.log.debug("%s" % nc.getContent())
+        
+        self.log.debug("This submit_workers() call concerns Panda Queues: %s" % pqset)
+        
+        for workSpec in workspec_list:               
             workSpec.batchID = uuid.uuid4().hex
             workSpec.set_status(WorkSpec.ST_submitted)
             APFGridSubmitter.workers.append(workSpec)
-            retList.append((True, ''))
-            self.log.debug("return list=%s " % retList)
-        return retList
+            retlist.append((True, ''))
+            self.log.debug("return list=%s " % retlist)
+        return retlist
