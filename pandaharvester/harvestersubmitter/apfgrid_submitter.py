@@ -13,9 +13,6 @@ baseLogger = core_utils.setup_logger()
 from autopyfactory.plugins.factory.config.Agis import Agis
 from autopyfactory.configloader import Config
 
-
-
-
 class APFGridSubmitter(PluginBase):
 
     
@@ -48,12 +45,21 @@ class APFGridSubmitter(PluginBase):
         cp.set('Factory','config.agis.jobsperpilot','1.5')
         cp.set('Factory','config.agis.numfactories','1')
         
-        agisobj = Agis(None, cp, None)
-        self.log.debug("AGIS object: %s" % agisobj)
+        self.agisobj = Agis(None, cp, None)
+        self.log.debug("AGIS object: %s" % self.agisobj)
         self.log.debug('Calling AGIS getConfig()...')
-        qc = agisobj.getConfig()
-        self.log.debug('qc=%s' % qc)
+        qc = self.agisobj.getConfig()
+        self.log.debug('%s' % self._print_config(qc))
         self.log.debug('APFGridSubmitter initialized.')       
+
+
+    def _print_config(self, config):
+        s=""
+        for section in config.sections():
+            s+= "[%s]\n" % section
+            for opt in config.options(section):
+                s+="%s = %s\n" % (opt, config.get(section, opt))
+        return s
 
     # submit workers
     def submit_workers(self, workspec_list):
@@ -73,6 +79,10 @@ class APFGridSubmitter(PluginBase):
         
         """
         self.log.debug('start nWorkers={0}'.format(len(workspec_list)))
+        self.log.debug("Update AGIS info...")
+        qc = self.agisobj.getConfig()
+        self.log.debug('%s' % self._print_config(qc))
+                
         retList = []
         for workSpec in workspec_list:
             self.log.debug("Worker(workerId=%s queueName=%s computingSite=%s status=%s " % (workSpec.workerID, 
