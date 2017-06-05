@@ -98,7 +98,7 @@ class APFGridSubmitter(PluginBase):
             #
             nclist = [] 
             for s in qc.sections():
-                if qc.get(s, 'wmsqueue') == workSpec.computingSite:
+                if qc.get(s, 'wmsqueue').strip() == workSpec.computingSite.strip():
                     pqname = workSpec.computingSite
                     pqset.add(pqname)
                     #nc = gc.getSection(s)
