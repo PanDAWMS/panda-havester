@@ -100,6 +100,7 @@ class APFGridSubmitter(PluginBase):
             for s in qc.sections():
                 if qc.get(s, 'wmsqueue').strip() == workSpec.computingSite.strip():
                     pqname = workSpec.computingSite
+                    self.log.debug("Found worker for PQ %s" % workSpec.computingSite)
                     pqset.add(pqname)
                     #nc = gc.getSection(s)
                     #nclist.append(nc)
