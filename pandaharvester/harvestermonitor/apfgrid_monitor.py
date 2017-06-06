@@ -21,14 +21,15 @@ class APFGridMonitor(PluginBase):
     def __init__(self, **kwarg):
         PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
-              
+        self.jobinfo = None      
         
         self.log.debug('APFGridMonitor initialized.')
         
-    def _queryCondor(self):
+    def _updateJobInfo(self):
         self.log.debug("Getting job info from Condor...")
         #out = condorlib._querycondorlib(['match_apf_queue', 'jobstatus', 'workerid'])
         out = condorlib.queryjobs(['match_apf_queue', 'jobstatus', 'workerid'])
+        self.jobinfo = out
 
     # check workers
     def check_workers(self, workspec_list):
@@ -44,6 +45,8 @@ class APFGridMonitor(PluginBase):
         """
         current = APFGridSubmitter.workers
         self.log.debug("%s workers in current status %s workers in workspec_list" % (len(current), len(workspec_list)))
+        self._updateJobInfo()
+                
         retlist = []
         for workSpec in workspec_list:
             self.log.debug("Worker(workerId=%s queueName=%s computingSite=%s status=%s )" % (workSpec.workerID, 
