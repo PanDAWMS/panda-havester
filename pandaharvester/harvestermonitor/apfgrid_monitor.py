@@ -4,12 +4,15 @@ from pandaharvester.harvestercore.plugin_base import PluginBase
 
 from pandaharvester.harvestersubmitter.apfgrid_submitter import APFGridSubmitter
 
+import logging
+import sys
+logging.debug("%s" % sys.path)
+
 from autopyfactory import condorlib
 
 # setup base logger
 baseLogger = core_utils.setup_logger()
 
-# dummy monitor
 class APFGridMonitor(PluginBase):
     # constructor
     def __init__(self, **kwarg):
@@ -21,8 +24,8 @@ class APFGridMonitor(PluginBase):
         
     def _queryCondor(self):
         self.log.debug("Getting job info from Condor...")
-        out = condorlib._querycondorlib(['match_apf_queue', 'jobstatus', 'workerid'])
-
+        #out = condorlib._querycondorlib(['match_apf_queue', 'jobstatus', 'workerid'])
+        out = condorlib.queryjobs(['match_apf_queue', 'jobstatus', 'workerid'])
 
     # check workers
     def check_workers(self, workspec_list):

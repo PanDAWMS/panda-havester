@@ -1,8 +1,11 @@
 
+import logging
+import sys
+logging.debug("%s" % sys.path)
+
 import os
 from sets import Set
 import uuid
-
 
 from pandaharvester.harvestercore import core_utils
 from pandaharvester.harvestercore.plugin_base import PluginBase
@@ -11,29 +14,16 @@ from pandaharvester.harvestercore.work_spec import WorkSpec
 # setup base logger
 baseLogger = core_utils.setup_logger()
 
-
 from autopyfactory.plugins.factory.config.Agis import Agis
 from autopyfactory.configloader import Config
 
 class APFGridSubmitter(PluginBase):
-
     
     workers = []
-    
-    
-    # constructor
+  
     def __init__(self, **kwarg):
         PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
-            #configplugin = Agis
-        #config.agis.baseurl = http://atlas-agis-api.cern.ch/request/pandaqueue/query/list/?json&preset=schedconf.all
-        #config.agis.defaultsfile= /etc/autopyfactory/agisdefaults.conf
-        #config.agis.sleep = 3600
-        #config.agis.vos = atlas
-        #config.agis.clouds = US
-        #config.agis.activities = analysis,production
-        #config.agis.jobsperpilot = 1.5
-        #config.agis.numfactories = 4
         
         cp = Config()
         cp.add_section('Factory')
@@ -49,9 +39,6 @@ class APFGridSubmitter(PluginBase):
         
         self.agisobj = Agis(None, cp, None)
         self.log.debug("AGIS object: %s" % self.agisobj)
-        #self.log.debug('Calling AGIS getConfig()...')
-        #qc = self.agisobj.getConfig()
-        #self.log.debug('%s' % self._print_config(qc))
         self.log.debug('APFGridSubmitter initialized.')       
 
 
