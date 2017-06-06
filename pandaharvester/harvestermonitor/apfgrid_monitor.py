@@ -6,9 +6,12 @@ from pandaharvester.harvestersubmitter.apfgrid_submitter import APFGridSubmitter
 
 import logging
 import sys
-logging.debug("%s" % sys.path)
 
-from autopyfactory import condorlib
+try:
+    from autopyfactory import condorlib
+except ImportError:
+    print("Unable to import htcondor/condorlib. sys.path=%s" % sys.path)
+
 
 # setup base logger
 baseLogger = core_utils.setup_logger()
