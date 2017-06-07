@@ -16,10 +16,17 @@ baseLogger = core_utils.setup_logger()
 
 from autopyfactory.plugins.factory.config.Agis import Agis
 from autopyfactory.configloader import Config
+from autopyfactory.queueslib import StaticAPFQueue
+
 
 class APFGridSubmitter(PluginBase):
-    
+    instance = None
     workers = []
+
+    def __new__(cls, *args, **kwargs):
+        if cls.instance is None:
+            cls.instance = super(APFGridSubmitter, cls).__new__(cls, *args, **kwargs)
+        return cls.instance
   
     def __init__(self, **kwarg):
         PluginBase.__init__(self, **kwarg)
@@ -71,31 +78,54 @@ class APFGridSubmitter(PluginBase):
         self.log.debug("Update AGIS info...")
         qc = self.agisobj.getConfig()
         #self.log.debug('%s' % self._print_config(qc))
-        
         retlist = []
-        pqset = Set()
         
+        # wsmap is indexed by computing site:
+        # { <computingsite>  : [ws1, ws2, ws3 ],
+        #   <computingsite2> : [ws4, ws5]
+        # } 
+        wsmap = {}
         for workSpec in workspec_list:
             self.log.debug("Worker(workerId=%s queueName=%s computingSite=%s nCore=%s status=%s " % (workSpec.workerID, 
                                                                                workSpec.queueName,
                                                                                workSpec.computingSite,
                                                                                workSpec.nCore, 
                                                                                workSpec.status) )
-            
-            #
-            nclist = [] 
+            try:
+                wslist = wsmap[workSpec.computingSite]
+                wslist.append(workSpec)
+            except KeyError:
+                wsmap[workSpec.computingSite] = [workSpec] 
+            self.log.debug("wsmap = %s" % wsmap)
+        
+        for pq in wsmap.keys():
+            found = False
+            section = None        
             for s in qc.sections():
                 qcq = qc.get(s, 'wmsqueue').strip()
                 #self.log.debug('Checking %s' % qcq)
-                if qcq == workSpec.computingSite:
-                    pqname = workSpec.computingSite
-                    self.log.debug("Found worker for PQ %s" % workSpec.computingSite)
-                    pqset.add(pqname)
-                    #nc = gc.getSection(s)
-                    #nclist.append(nc)
-                    #self.log.debug("%s" % nc.getContent())
-        
-        self.log.debug("This submit_workers() call concerns Panda Queues: %s" % pqset)
+                if qcq == pq:
+                    found = True
+                    section = s
+                    self.log.debug("Found queues config for %s" % pq)
+            if found:
+                # make apfq and submit
+                self.log.debug("Agis config found for PQ")
+                pqc = qc.getsection(section) 
+                self.log.debug("Section config= %s" % pqc)
+                self.log.debug("Making APF queue for PQ %s with label %s"% (pq, section))
+                apfq = StaticAPFQueue(self, pqc )
+                self.log.debug("Successfully made APFQueue")
+                joblist = []
+                for ws in wsmap[pq]:
+                    jobentry = { "+workerid" : ws.workerID }
+                    joblist.append(jobentry)
+                self.log.debug("joblist made= %s. Submitting..." % joblist)
+                jobinfo = apfq.submitlist(joblist)
+                self.log.debug("Got jobinfo %s" % jobinfo)
+            else:
+                self.log.info('No AGIS config found for PQ %s skipping.' % pq)        
+                                             
         
         for workSpec in workspec_list:               
             workSpec.batchID = uuid.uuid4().hex

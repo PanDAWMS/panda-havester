@@ -17,8 +17,17 @@ except ImportError:
 baseLogger = core_utils.setup_logger()
 
 class APFGridMonitor(PluginBase):
+    instance = None
+    
+    # override __new__ to have a singleton
+    def __new__(cls, *args, **kwargs):
+        if cls.instance is None:
+            cls.instance = super(APFGridMonitor, cls).__new__(cls, *args, **kwargs)
+        return cls.instance
+    
     # constructor
     def __init__(self, **kwarg):
+        
         PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
         self.jobinfo = None      
@@ -29,6 +38,7 @@ class APFGridMonitor(PluginBase):
         self.log.debug("Getting job info from Condor...")
         #out = condorlib._querycondorlib(['match_apf_queue', 'jobstatus', 'workerid'])
         out = condorlib.queryjobs(['match_apf_queue', 'jobstatus', 'workerid'])
+        self.log.debug("Got jobinfo %s" % out)
         self.jobinfo = out
 
     # check workers
