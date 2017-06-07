@@ -111,7 +111,7 @@ class APFGridSubmitter(PluginBase):
             if found:
                 # make apfq and submit
                 self.log.debug("Agis config found for PQ")
-                pqc = qc.getsection(section) 
+                pqc = qc.getSection(section) 
                 self.log.debug("Section config= %s" % pqc)
                 self.log.debug("Making APF queue for PQ %s with label %s"% (pq, section))
                 apfq = StaticAPFQueue(self, pqc )
@@ -130,7 +130,6 @@ class APFGridSubmitter(PluginBase):
         for workSpec in workspec_list:               
             workSpec.batchID = uuid.uuid4().hex
             workSpec.set_status(WorkSpec.ST_submitted)
-            APFGridSubmitter.workers.append(workSpec)
             retlist.append((True, ''))
             self.log.debug("return list=%s " % retlist)
         return retlist
