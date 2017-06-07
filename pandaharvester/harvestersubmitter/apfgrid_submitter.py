@@ -77,7 +77,8 @@ class APFGridSubmitter(PluginBase):
         self.log.debug('start nWorkers={0}'.format(len(workspec_list)))
         self.log.debug("Update AGIS info...")
         qc = self.agisobj.getConfig()
-        #self.log.debug('%s' % self._print_config(qc))
+        self.log.debug('Agis config output %s' % self._print_config(qc))
+        self.log.debug('Agis config defaults= %s' % qc.defaults() )
         retlist = []
         
         # wsmap is indexed by computing site:
