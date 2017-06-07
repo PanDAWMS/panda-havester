@@ -16,7 +16,7 @@ baseLogger = core_utils.setup_logger()
 
 from autopyfactory.plugins.factory.config.Agis import Agis
 from autopyfactory.configloader import Config
-from autopyfactory.queueslib import StaticAPFQueue
+from autopyfactory.queueslib import StaticAPFQueueJC as StaticAPFQueue
 
 
 class APFGridSubmitter(PluginBase):
