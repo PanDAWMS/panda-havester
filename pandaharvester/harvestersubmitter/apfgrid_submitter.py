@@ -16,7 +16,7 @@ baseLogger = core_utils.setup_logger()
 
 from autopyfactory.plugins.factory.config.Agis import Agis
 from autopyfactory.configloader import Config
-from autopyfactory.queueslib import StaticAPFQueueJC as StaticAPFQueue
+from autopyfactory.queueslib import StaticAPFQueueJC 
 
 
 class APFGridSubmitter(PluginBase):
@@ -111,10 +111,12 @@ class APFGridSubmitter(PluginBase):
             if found:
                 # make apfq and submit
                 self.log.debug("Agis config found for PQ")
-                pqc = qc.getSection(section) 
+                pqc = qc.getSection(section)
+                ac = os.path.expanduser('~/harvester/etc/autopyfactory/autopyfactory.conf')
+                pqc.set(section, 'factoryconf', ac) 
                 self.log.debug("Section config= %s" % pqc)
                 self.log.debug("Making APF queue for PQ %s with label %s"% (pq, section))
-                apfq = StaticAPFQueue( pqc )
+                apfq = StaticAPFQueueJC( pqc )
                 self.log.debug("Successfully made APFQueue")
                 joblist = []
                 for ws in wsmap[pq]:
