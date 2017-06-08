@@ -128,6 +128,7 @@ class APFGridSubmitter(PluginBase):
                 jobinfo = apfq.submitlist(joblist)
                 wslist = wsmap[pq]
                 for i in range(0, len(wslist)):
+                    self.log.debug("Setting ws.batchID to %s" % jobinfo[i].jobid)
                     wslist[i].batchID = jobinfo[i].jobid
                     wslist[i].set_status(WorkSpec.ST_submitted)
                     retlist.append((True, ''))
