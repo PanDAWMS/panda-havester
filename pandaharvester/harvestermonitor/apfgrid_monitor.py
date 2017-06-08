@@ -80,7 +80,8 @@ class APFGridMonitor(PluginBase):
         :return: A tuple of return code (True for success, False otherwise) and a list of worker's statuses.
         :rtype: (bool, [string,])
         """
-        
+        self.jobinfo = []
+        self.historyinfo = []
         self._updateJobInfo()
                 
         retlist = []
@@ -91,7 +92,10 @@ class APFGridMonitor(PluginBase):
                                                                                workSpec.status) )
             #newStatus = WorkSpec.ST_submitted
             found = False
-            for jobad in self.jobinfo:
+            
+            alljobs = self.jobinfo + self.historyinfo
+            
+            for jobad in alljobs:
                 if jobad['workerid'] == workSpec.workerID:
                     self.log.debug("Found matching job: ID %s" % jobad['workerid'])
                     found = True
