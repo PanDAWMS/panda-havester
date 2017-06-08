@@ -86,6 +86,7 @@ class APFGridSubmitter(PluginBase):
         #   <computingsite2> : [ws4, ws5]
         # } 
         wsmap = {}
+        jobmap = {}
         for workSpec in workspec_list:
             self.log.debug("Worker(workerId=%s queueName=%s computingSite=%s nCore=%s status=%s " % (workSpec.workerID, 
                                                                                workSpec.queueName,
@@ -119,20 +120,20 @@ class APFGridSubmitter(PluginBase):
                 self.log.debug("Making APF queue for PQ %s with label %s"% (pq, section))
                 apfq = StaticAPFQueueJC( pqc )
                 self.log.debug("Successfully made APFQueue")
-                joblist = []
+
                 for ws in wsmap[pq]:
                     jobentry = { "+workerid" : ws.workerID }
                     joblist.append(jobentry)
                 self.log.debug("joblist made= %s. Submitting..." % joblist)
                 jobinfo = apfq.submitlist(joblist)
+                wslist = wsmap[pq]
+                for i in range(0, len(wslist)):
+                    wslist[i].batchID = jobinfo[i].jobid
+                    wslist[i].set_status(WorkSpec.ST_submitted)
+                    retlist.append((True, ''))
                 self.log.debug("Got jobinfo %s" % jobinfo)
             else:
                 self.log.info('No AGIS config found for PQ %s skipping.' % pq)        
-        
-                                             
-        for i in range(0, len(workspec_list)):
-            workspec_list[i].batchID = joblist[i].jobid
-            workspec_list[i].set_status(WorkSpec.ST_submitted)
-            retlist.append((True, ''))
+
         self.log.debug("return list=%s " % retlist)
         return retlist
