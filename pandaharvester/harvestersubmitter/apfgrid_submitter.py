@@ -120,7 +120,7 @@ class APFGridSubmitter(PluginBase):
                 self.log.debug("Making APF queue for PQ %s with label %s"% (pq, section))
                 apfq = StaticAPFQueueJC( pqc )
                 self.log.debug("Successfully made APFQueue")
-
+                joblist = []
                 for ws in wsmap[pq]:
                     jobentry = { "+workerid" : ws.workerID }
                     joblist.append(jobentry)
