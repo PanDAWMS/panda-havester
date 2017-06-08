@@ -126,13 +126,17 @@ class APFGridSubmitter(PluginBase):
                     joblist.append(jobentry)
                 self.log.debug("joblist made= %s. Submitting..." % joblist)
                 jobinfo = apfq.submitlist(joblist)
+                self.log.debug("Got jobinfo %s" % jobinfo)
+                
                 wslist = wsmap[pq]
+                self.log.debug("wslist for pq %s is length %s" % (pq, len(wslist)))
                 for i in range(0, len(wslist)):
-                    self.log.debug("Setting ws.batchID to %s" % jobinfo[i].jobid)
+                    self.log.debug("Setting ws.batchID to %s" % jobinfo[i].jobid )
                     wslist[i].batchID = jobinfo[i].jobid
                     wslist[i].set_status(WorkSpec.ST_submitted)
                     retlist.append((True, ''))
-                self.log.debug("Got jobinfo %s" % jobinfo)
+                
+                
             else:
                 self.log.info('No AGIS config found for PQ %s skipping.' % pq)        
 
