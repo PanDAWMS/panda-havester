@@ -128,11 +128,11 @@ class APFGridSubmitter(PluginBase):
                 self.log.debug("Got jobinfo %s" % jobinfo)
             else:
                 self.log.info('No AGIS config found for PQ %s skipping.' % pq)        
-                                             
         
-        for workSpec in workspec_list:               
-            workSpec.batchID = uuid.uuid4().hex
-            workSpec.set_status(WorkSpec.ST_submitted)
+                                             
+        for i in range(0, len(workspec_list)):
+            workspec_list[i].batchID = joblist[i].jobid
+            workspec_list[i].set_status(WorkSpec.ST_submitted)
             retlist.append((True, ''))
-            self.log.debug("return list=%s " % retlist)
+        self.log.debug("return list=%s " % retlist)
         return retlist
