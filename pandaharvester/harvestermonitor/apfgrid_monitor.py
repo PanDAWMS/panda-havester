@@ -80,7 +80,6 @@ class APFGridMonitor(PluginBase):
         :return: A tuple of return code (True for success, False otherwise) and a list of worker's statuses.
         :rtype: (bool, [string,])
         """
-        self.log.debug("%s workers in current status %s workers in workspec_list" % (len(current), len(workspec_list)))
         
         self._updateJobInfo()
                 
