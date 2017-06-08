@@ -54,7 +54,6 @@ class APFGridMonitor(PluginBase):
         
         PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
-        self.log.setLevel(logging.DEBUG)
         self.jobinfo = None
         self.historyinfo = None      
         self.log.debug('APFGridMonitor initialized.')
