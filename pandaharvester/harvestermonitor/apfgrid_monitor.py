@@ -40,6 +40,9 @@ class APFGridMonitor(PluginBase):
         out = condorlib.queryjobs(['match_apf_queue', 'jobstatus', 'workerid'])
         self.log.debug("Got jobinfo %s" % out)
         self.jobinfo = out
+        out = condorlib.condorhistorylib(attributes = ['workerid'])
+        self.log.debug("Got history info %s" % out)
+        self.historyinfo = out
 
     # check workers
     def check_workers(self, workspec_list):
@@ -53,7 +56,6 @@ class APFGridMonitor(PluginBase):
         :return: A tuple of return code (True for success, False otherwise) and a list of worker's statuses.
         :rtype: (bool, [string,])
         """
-        current = APFGridSubmitter.workers
         self.log.debug("%s workers in current status %s workers in workspec_list" % (len(current), len(workspec_list)))
         self._updateJobInfo()
                 

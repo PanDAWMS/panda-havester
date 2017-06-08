@@ -21,7 +21,6 @@ from autopyfactory.queueslib import StaticAPFQueueJC
 
 class APFGridSubmitter(PluginBase):
     instance = None
-    workers = []
 
     def __new__(cls, *args, **kwargs):
         if cls.instance is None:
