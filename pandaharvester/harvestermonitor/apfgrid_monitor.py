@@ -17,7 +17,31 @@ except ImportError:
 baseLogger = core_utils.setup_logger()
 
 class APFGridMonitor(PluginBase):
-    instance = None
+    '''
+    1  WorkSpec.ST_submitted = 'submitted'   
+    2  WorkSpec.ST_running = 'running'       
+    4  WorkSpec.ST_finished = 'finished'     
+    5  WorkSpec.ST_failed = 'failed'        
+    6  WorkSpec.ST_ready = 'ready'           
+    3  WorkSpec.ST_cancelled = 'cancelled '  
+    
+    CONDOR_JOBSTATUS 
+    1    Idle       I              
+    2    Running    R
+    3    Removed    X
+    4    Completed  C
+    5    Held       H
+    6    Submission_err  E
+    '''
+    instance = None 
+    STATUS_MAP = {
+        1 : WorkSpec.ST_submitted,
+        2 : WorkSpec.ST_running,
+        3 : WorkSpec.ST_cancelled,
+        4 : WorkSpec.ST_finished,
+        5 : WorkSpec.ST_failed,
+        6 : WorkSpec.ST_ready,
+        }   
     
     # override __new__ to have a singleton
     def __new__(cls, *args, **kwargs):
@@ -30,8 +54,9 @@ class APFGridMonitor(PluginBase):
         
         PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
-        self.jobinfo = None      
-        
+        self.log.setLevel(logging.DEBUG)
+        self.jobinfo = None
+        self.historyinfo = None      
         self.log.debug('APFGridMonitor initialized.')
         
     def _updateJobInfo(self):
@@ -57,6 +82,7 @@ class APFGridMonitor(PluginBase):
         :rtype: (bool, [string,])
         """
         self.log.debug("%s workers in current status %s workers in workspec_list" % (len(current), len(workspec_list)))
+        
         self._updateJobInfo()
                 
         retlist = []
@@ -65,15 +91,16 @@ class APFGridMonitor(PluginBase):
                                                                                workSpec.queueName,
                                                                                workSpec.computingSite, 
                                                                                workSpec.status) )
-            newStatus = WorkSpec.ST_submitted
+            #newStatus = WorkSpec.ST_submitted
             found = False
-            for worker in current:
-                if worker.workerID == workSpec.workerID:
-                    self.log.debug("Found matching worker: %s with ID %s" % (worker, worker.workerID))
+            for jobad in self.jobinfo:
+                if jobad['workerid'] == workSpec.workerID:
+                    self.log.debug("Found matching job: ID %s" % jobad['workerid'])
                     found = True
-                    retlist.append((worker.status, ''))
+                    jobstatus = int(jobad['jobstatus'])
+                    retlist.append((APFGridMonitor.STATUS_MAP[jobstatus], ''))
             if not found:
-                retlist.append((newStatus, ''))
+                retlist.append((WorkSpec.ST_cancelled, ''))
         self.log.debug('retlist=%s' % retlist)
         return True, retlist
 
