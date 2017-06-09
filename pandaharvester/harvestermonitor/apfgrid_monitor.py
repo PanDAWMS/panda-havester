@@ -16,15 +16,6 @@ baseLogger = core_utils.setup_logger()
 
 
 class APFGridMonitor(PluginBase):
-    instance = None
-
-    def __new__(cls, **kwargs ):
-        if not APFGridMonitor.instance:
-            APFGridMonitor.instance = _APFGridMonitor(**kwargs)
-        return APFGridMonitor.instance
-
-
-class _APFGridMonitor(PluginBase):
     '''
     1  WorkSpec.ST_submitted = 'submitted'   
     2  WorkSpec.ST_running = 'running'       

@@ -15,15 +15,6 @@ from autopyfactory.queueslib import StaticAPFQueueJC
 baseLogger = core_utils.setup_logger()
 
 class APFGridSubmitter(PluginBase):
-    instance = None
-
-    def __new__(cls, **kwargs ):
-        if not APFGridSubmitter.instance:
-            APFGridSubmitter.instance = _APFGridSubmitter(**kwargs)
-        return APFGridSubmitter.instance
-
-
-class _APFGridSubmitter(PluginBase):
   
     def __init__(self, **kwarg):
         PluginBase.__init__(self, **kwarg)
