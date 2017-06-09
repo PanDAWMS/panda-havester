@@ -17,14 +17,15 @@ baseLogger = core_utils.setup_logger()
 class APFGridSubmitter(PluginBase):
     instance = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls.instance is None:
-            cls.instance = super(APFGridSubmitter, cls).__new__(cls, *args, **kwargs)
-            cls.instance.initialized = False
-        return cls.instance
+    def __new__(cls, *k, **kw):
+        if not APFGridSubmitter.instance:
+            APFGridSubmitter.instance = _APFGridSubmitter(*k, **kw)
+        return APFGridSubmitter.instance
+
+
+class _APFGridSubmitter(PluginBase):
   
     def __init__(self, **kwarg):
-        if self.initialized: return
         PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
         

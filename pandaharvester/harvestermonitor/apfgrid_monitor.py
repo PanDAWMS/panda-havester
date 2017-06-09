@@ -14,7 +14,16 @@ except ImportError:
 # setup base logger
 baseLogger = core_utils.setup_logger()
 
+
 class APFGridMonitor(PluginBase):
+    instance = None
+
+    def __new__(cls, *k, **kw):
+        if not APFGridMonitor.instance:
+            APFGridMonitor.instance = _APFGridMonitor(*k, **kw)
+        return APFGridMonitor.instance
+
+class _APFGridMonitor(PluginBase):
     '''
     1  WorkSpec.ST_submitted = 'submitted'   
     2  WorkSpec.ST_running = 'running'       
