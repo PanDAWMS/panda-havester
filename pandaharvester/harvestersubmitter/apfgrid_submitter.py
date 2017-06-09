@@ -17,9 +17,9 @@ baseLogger = core_utils.setup_logger()
 class APFGridSubmitter(PluginBase):
     instance = None
 
-    def __new__(cls, *k, **kw):
+    def __new__(cls, **kwargs ):
         if not APFGridSubmitter.instance:
-            APFGridSubmitter.instance = _APFGridSubmitter(*k, **kw)
+            APFGridSubmitter.instance = _APFGridSubmitter(**kwargs)
         return APFGridSubmitter.instance
 
 
@@ -38,7 +38,7 @@ class _APFGridSubmitter(PluginBase):
         self.agisobj = Agis(None, cp, None)
         self.log.debug("AGIS object: %s" % self.agisobj)
         self.log.debug('APFGridSubmitter initialized.')       
-        self.initialized = True
+
 
     def _print_config(self, config):
         s=""

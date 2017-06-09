@@ -18,10 +18,11 @@ baseLogger = core_utils.setup_logger()
 class APFGridMonitor(PluginBase):
     instance = None
 
-    def __new__(cls, *k, **kw):
+    def __new__(cls, **kwargs ):
         if not APFGridMonitor.instance:
-            APFGridMonitor.instance = _APFGridMonitor(*k, **kw)
+            APFGridMonitor.instance = _APFGridMonitor(**kwargs)
         return APFGridMonitor.instance
+
 
 class _APFGridMonitor(PluginBase):
     '''
@@ -50,18 +51,9 @@ class _APFGridMonitor(PluginBase):
         5 : WorkSpec.ST_failed,
         6 : WorkSpec.ST_ready,
         }   
-    
-    # override __new__ to have a singleton
-    def __new__(cls, *args, **kwargs):
-        if cls.instance is None:
-            cls.instance = super(APFGridMonitor, cls).__new__(cls, *args, **kwargs)
-            cls.instance.initialized = False
-        return cls.instance
-    
+
     # constructor
-    def __init__(self, **kwarg):
-        if self.initialized: return
-        
+    def __init__(self, **kwarg):      
         PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
         self.jobinfo = None
