@@ -1,17 +1,15 @@
+import logging
+import sys
+
 from pandaharvester.harvestercore import core_utils
 from pandaharvester.harvestercore.work_spec import WorkSpec
 from pandaharvester.harvestercore.plugin_base import PluginBase
-
 from pandaharvester.harvestersubmitter.apfgrid_submitter import APFGridSubmitter
-
-import logging
-import sys
 
 try:
     from autopyfactory import condorlib
 except ImportError:
-    print("Unable to import htcondor/condorlib. sys.path=%s" % sys.path)
-
+    logging.error("Unable to import htcondor/condorlib. sys.path=%s" % sys.path)
 
 # setup base logger
 baseLogger = core_utils.setup_logger()
@@ -34,6 +32,7 @@ class APFGridMonitor(PluginBase):
     6    Submission_err  E
     '''
     instance = None 
+    
     STATUS_MAP = {
         1 : WorkSpec.ST_submitted,
         2 : WorkSpec.ST_running,
@@ -47,10 +46,12 @@ class APFGridMonitor(PluginBase):
     def __new__(cls, *args, **kwargs):
         if cls.instance is None:
             cls.instance = super(APFGridMonitor, cls).__new__(cls, *args, **kwargs)
+            cls.instance.initialized = False
         return cls.instance
     
     # constructor
     def __init__(self, **kwarg):
+        if self.initialized: return
         
         PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
@@ -70,7 +71,7 @@ class APFGridMonitor(PluginBase):
 
     # check workers
     def check_workers(self, workspec_list):
-        """Check status of workers. This method takes a list of WorkSpecs as input argument
+        '''Check status of workers. This method takes a list of WorkSpecs as input argument
         and returns a list of worker's statuses.
         Nth element if the return list corresponds to the status of Nth WorkSpec in the given list. Worker's
         status is one of WorkSpec.ST_finished, WorkSpec.ST_failed, WorkSpec.ST_cancelled, WorkSpec.ST_running,
@@ -79,7 +80,7 @@ class APFGridMonitor(PluginBase):
         :param workspec_list: a list of work specs instances
         :return: A tuple of return code (True for success, False otherwise) and a list of worker's statuses.
         :rtype: (bool, [string,])
-        """
+        '''
         self.jobinfo = []
         self.historyinfo = []
         self._updateJobInfo()

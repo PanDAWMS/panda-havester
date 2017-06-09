@@ -1,23 +1,18 @@
 
 import logging
-import sys
-logging.debug("%s" % sys.path)
-
 import os
-from sets import Set
-import uuid
+import sys
 
 from pandaharvester.harvestercore import core_utils
 from pandaharvester.harvestercore.plugin_base import PluginBase
 from pandaharvester.harvestercore.work_spec import WorkSpec
 
-# setup base logger
-baseLogger = core_utils.setup_logger()
-
 from autopyfactory.plugins.factory.config.Agis import Agis
 from autopyfactory.configloader import Config
 from autopyfactory.queueslib import StaticAPFQueueJC 
 
+# setup base logger
+baseLogger = core_utils.setup_logger()
 
 class APFGridSubmitter(PluginBase):
     instance = None
@@ -25,28 +20,24 @@ class APFGridSubmitter(PluginBase):
     def __new__(cls, *args, **kwargs):
         if cls.instance is None:
             cls.instance = super(APFGridSubmitter, cls).__new__(cls, *args, **kwargs)
+            cls.instance.initialized = False
         return cls.instance
   
     def __init__(self, **kwarg):
+        if self.initialized: return
         PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
         
         cp = Config()
-        cp.add_section('Factory')
-        cp.set('Factory','config.agis.baseurl','http://atlas-agis-api.cern.ch/request/pandaqueue/query/list/?json&preset=schedconf.all')
-        df = os.path.expanduser('~/harvester/etc/autopyfactory/agisdefaults.conf')
-        cp.set('Factory','config.agis.defaultsfiles', df)
-        cp.set('Factory','config.agis.sleep', '3600')
-        cp.set('Factory','config.agis.vos','atlas')
-        cp.set('Factory','config.agis.clouds','US')
-        cp.set('Factory','config.agis.activities','production')
-        cp.set('Factory','config.agis.jobsperpilot','1.5')
-        cp.set('Factory','config.agis.numfactories','1')
+        factoryconffile = os.path.expanduser('~/harvester/etc/autopyfactory/autopyfactory.conf')
+        self.log.debug('Reading config: %s' % factoryconffile)
+        okread = cp.read()
+        self.log.debug('Successfully read %s' % okread)       
         
         self.agisobj = Agis(None, cp, None)
         self.log.debug("AGIS object: %s" % self.agisobj)
         self.log.debug('APFGridSubmitter initialized.')       
-
+        self.initialized = True
 
     def _print_config(self, config):
         s=""
@@ -58,7 +49,8 @@ class APFGridSubmitter(PluginBase):
 
     # submit workers
     def submit_workers(self, workspec_list):
-        """Submit workers to a scheduling system like batch systems and computing elements.
+        '''
+        Submit workers to a scheduling system like batch systems and computing elements.
         This method takes a list of WorkSpecs as input argument, and returns a list of tuples.
         Each tuple is composed of a return code and a dialog message.
         Nth tuple in the returned list corresponds to submission status and dialog message for Nth worker
@@ -72,7 +64,7 @@ class APFGridSubmitter(PluginBase):
         and dialog message
         :rtype: [(bool, string),]
         
-        """
+        '''
         self.log.debug('start nWorkers={0}'.format(len(workspec_list)))
         self.log.debug("Update AGIS info...")
         qc = self.agisobj.getConfig()
