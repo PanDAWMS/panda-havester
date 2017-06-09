@@ -23,7 +23,7 @@ class APFGridSubmitter(PluginBase):
         cp = Config()
         factoryconffile = os.path.expanduser('~/harvester/etc/autopyfactory/autopyfactory.conf')
         self.log.debug('Reading config: %s' % factoryconffile)
-        okread = cp.read()
+        okread = cp.read(factoryconffile)
         self.log.debug('Successfully read %s' % okread)       
         
         self.agisobj = Agis(None, cp, None)
