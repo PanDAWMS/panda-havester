@@ -120,6 +120,7 @@ class APFGridSubmitter(PluginBase):
                 self.log.debug("Section config= %s" % pqc)
                 self.log.debug("Making APF queue for PQ %s with label %s"% (pq, section))
                 apfq = StaticAPFQueueJC( pqc )
+                apfq.factory.authmanager = self.authma
                 self.log.debug("Successfully made APFQueue")
                 joblist = []
                 for ws in wsmap[pq]:
