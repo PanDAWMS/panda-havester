@@ -10,11 +10,14 @@ from pandaharvester.harvestercore.work_spec import WorkSpec
 from autopyfactory.plugins.factory.config.Agis import Agis
 from autopyfactory.configloader import Config
 from autopyfactory.queueslib import StaticAPFQueueJC 
-
+from autopyfactory.authmanager import AuthManager
 # setup base logger
 baseLogger = core_utils.setup_logger()
 
 class APFGridSubmitter(PluginBase):
+    
+    authman = None
+    agis = None
   
     def __init__(self, **kwarg):
         PluginBase.__init__(self, **kwarg)
@@ -26,8 +29,26 @@ class APFGridSubmitter(PluginBase):
         okread = cp.read(factoryconffile)
         self.log.debug('Successfully read %s' % okread)       
         
-        self.agisobj = Agis(None, cp, None)
+        # Setup AGIS
+        if APFGridSubmitter.agis is None:
+            APFGridSubmitter.agisobj = Agis(None, cp, None)
+        self.agisobj = APFGridSubmitter.agisobj
         self.log.debug("AGIS object: %s" % self.agisobj)
+        
+        # Setup Authmanager
+        authconfigfile = os.path.expanduser(cp.get('Factory','authConf'))
+        ac = Config()
+        self.log.debug('Reading config: %s' % authconfigfile)
+        okread = ac.read(authconfigfile)
+        self.log.debug('Successfully read %s' % okread) 
+        if APFGridSubmitter.authman is None :
+            APFGridSubmitter.authman = AuthManager(ac)
+        self.authman = APFGridSubmitter.authman           
+        APFGridSubmitter.authman.starthandlers()        
+                
+                
+                
+                
         self.log.debug('APFGridSubmitter initialized.')       
 
 
@@ -60,8 +81,8 @@ class APFGridSubmitter(PluginBase):
         self.log.debug('start nWorkers={0}'.format(len(workspec_list)))
         self.log.debug("Update AGIS info...")
         qc = self.agisobj.getConfig()
-        self.log.debug('Agis config output %s' % self._print_config(qc))
-        self.log.debug('Agis config defaults= %s' % qc.defaults() )
+        #self.log.debug('Agis config output %s' % self._print_config(qc))
+        #self.log.debug('Agis config defaults= %s' % qc.defaults() )
         retlist = []
         
         # wsmap is indexed by computing site:
