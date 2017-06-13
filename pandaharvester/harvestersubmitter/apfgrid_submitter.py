@@ -44,10 +44,7 @@ class APFGridSubmitter(PluginBase):
         if APFGridSubmitter.authman is None :
             APFGridSubmitter.authman = AuthManager(ac)
         self.authman = APFGridSubmitter.authman           
-        APFGridSubmitter.authman.starthandlers()        
-                
-                
-                
+        APFGridSubmitter.authman.startHandlers()        
                 
         self.log.debug('APFGridSubmitter initialized.')       
 
