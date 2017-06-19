@@ -1,5 +1,8 @@
 import re
 import subprocess
+import json
+import os.path
+from pprint import pprint
 
 from pandaharvester.harvestercore import core_utils
 from pandaharvester.harvestercore.work_spec import WorkSpec
@@ -24,6 +27,10 @@ class CobaltMonitor (PluginBase):
     def check_workers(self, workspec_list):
         retList = []
         for workSpec in workspec_list:
+            # print "pprint(dir(workSpec))"
+            # pprint(dir(workSpec))
+            # print "pprint(vars(workSpec))"
+            # pprint(vars(workSpec))
             # make logger
             tmpLog = core_utils.make_logger(baseLogger, 'workerID={0}'.format(workSpec.workerID))
             # first command
@@ -48,7 +55,7 @@ class CobaltMonitor (PluginBase):
                 else:
                     tmpMatch = None
                     for tmpLine in stdOut.split('\n'):
-                        #DPBtmpLog.debug('tmpLine = {0}'.format(tmpLine))
+                        # DPBtmpLog.debug('tmpLine = {0}'.format(tmpLine))
                         tmpMatch = re.search('{0} '.format(workSpec.batchID), tmpLine)
                         if tmpMatch is not None:
                             errStr = tmpLine
@@ -60,6 +67,8 @@ class CobaltMonitor (PluginBase):
                                 newStatus = WorkSpec.ST_submitted
                             elif batchStatus == 'user_hold':
                                 newStatus = WorkSpec.ST_submitted
+                            elif batchStatus == 'starting':
+                                newStatus = WorkSpec.ST_running
                             else:
                                 # failed
                                 errStr = stdOut + ' ' + stdErr
@@ -72,11 +81,47 @@ class CobaltMonitor (PluginBase):
                         tmpLog.error(errStr)
                         raise Exception('could not parse qstat output: \n' + stdOut)
 
-                tmpLog.debug('batchStatus {0} -> workerStatus {1}'.format(batchStatus,newStatus))
+                tmpLog.debug('batchStatus {0} -> workerStatus {1}'.format(batchStatus, newStatus))
                 retList.append((newStatus, errStr))
             else:
-                # failed
-                errStr = 'qstat stdout: \n' + stdOut + '\nqstat stderr:\n' + stdErr + '\n'
-                tmpLog.error(errStr)
-                retList.append((newStatus, errStr))
+                # non zero return code 
+                # look for jobReport.json file 
+                jsonFilePath = os.path.join(workSpec.get_access_point(), "jobReport.json")
+                if os.path.exists(jsonFilePath):
+                    tmpLog.debug('found jobReport.json file : {0}'.format(jsonFilePath))
+                    try:
+                        with open(jsonFilePath) as jsonFile:
+                            loadDict = json.load(jsonFile)
+                        # tmpLog.debug('loaded jobReport dict : {0}'.format(str(loadDict)))
+                        tmpLog.debug('loaded jobReport dict')
+                        if 'exitCode' in loadDict :
+                            tmpLog.debug('loadDict[exitCode] = {0}'.format(str(loadDict['exitCode'])))
+                            if int(loadDict['exitCode']) == 0:
+
+                                newStatus = WorkSpec.ST_finished
+                            else:
+                                newStatus = WorkSpec.ST_failed
+                            if 'errMsg' in loadDict:
+                                errStr = loadDict['errMsg']
+                            tmpLog.error(errStr)
+                            retList.append((newStatus, errStr))        
+                        else:
+                            # no exit code found
+                            errStr = 'Failed to find exitCode value in jobReport.json'
+                            newStatus = WorkSpec.ST_failed
+                            tmpLog.error(errStr)
+                            retList.append((newStatus, errStr))
+                    except:
+                        # failed
+                        errStr = 'failed to load existing jobReport.json'
+                        newStatus = WorkSpec.ST_failed
+                        tmpLog.error(errStr)
+                        retList.append((newStatus, errStr))
+                        continue
+                else:
+                    tmpLog.debug('Did not find jobReport.json file : {0}'.format(jsonFilePath))
+                    errStr = 'qstat {0} return code non zero and jobReport.json file not found '.format(workSpec.batchID)
+                    newStatus =  WorkSpec.ST_failed
+                    tmpLog.error(errStr)
+                    retList.append((newStatus, errStr))
         return True, retList

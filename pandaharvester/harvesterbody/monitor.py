@@ -56,6 +56,8 @@ class Monitor(AgentBase):
                     jobSpecs = None
                     filesToStageOut = dict()
                     pandaIDsList = []
+                    eventsToUpdateList = []
+                    filesToStageOutList = []
                     for workSpec in workSpecs:
                         tmpLog = core_utils.make_logger(_logger, 'workerID={0}'.format(workSpec.workerID))
                         tmpOut = tmpRetMap[workSpec.workerID]
@@ -83,17 +85,24 @@ class Monitor(AgentBase):
                         if workSpec.hasJob == 1 and jobSpecs is None:
                             jobSpecs = self.dbProxy.get_jobs_with_worker_id(workSpec.workerID,
                                                                             lockedBy)
-                        # pandaIDs for pull
+                        # pandaIDs for push
                         pandaIDsList.append(pandaIDs)
+                        if len(eventsToUpdate) > 0:
+                            eventsToUpdateList.append(eventsToUpdate)
+                        if len(filesToStageOut) > 0:
+                            filesToStageOutList.append(filesToStageOut)
                     # update jobs and workers
                     if jobSpecs is not None:
-                        tmpQueLog.debug('update {0} jobs with {1} workers'.format(len(jobSpecs), len(workSpecs)))
-                        messenger.update_job_attributes_with_workers(queueConfig.mapType, jobSpecs, workSpecs,
-                                                                     filesToStageOut, eventsToUpdate)
+                        tmpQueLog.debug('updating {0} jobs with {1} workers'.format(len(jobSpecs), len(workSpecs)))
+                        core_utils.update_job_attributes_with_workers(queueConfig.mapType, jobSpecs, workSpecs,
+                                                                      filesToStageOutList, eventsToUpdateList)
+                        for jobSpec in jobSpecs:
+                            tmpLog = core_utils.make_logger(_logger, 'PandaID={0}'.format(jobSpec.PandaID))
+                            tmpLog.debug('new status={0} subStatus={1}'.format(jobSpec.status, jobSpec.subStatus))
                     # update local database
                     self.dbProxy.update_jobs_workers(jobSpecs, workSpecs, lockedBy, pandaIDsList)
                     # send ACK to workers for events and files
-                    if eventsToUpdate != [] or filesToStageOut != {}:
+                    if len(eventsToUpdateList) > 0 or len(filesToStageOutList) > 0:
                         for workSpec in workSpecs:
                             messenger.acknowledge_events_files(workSpec)
                 tmpQueLog.debug('done')
@@ -156,18 +165,17 @@ class Monitor(AgentBase):
                 if workerID in retMap:
                     # set running while there are events to update or files to stage out
                     if newStatus in [WorkSpec.ST_finished, WorkSpec.ST_failed, WorkSpec.ST_cancelled]:
-                        if not workSpec.is_post_processed():
-                            # post processing unless heartbeat is suppressed
+                        if len(retMap[workerID]['filesToStageOut']) > 0 or \
+                                        len(retMap[workerID]['eventsToUpdate']) > 0:
+                            newStatus = WorkSpec.ST_running
+                        elif not workSpec.is_post_processed():
                             if not queue_config.is_no_heartbeat_status(newStatus):
-                                # get associated jobIDs
+                                # post processing unless heartbeat is suppressed
                                 jobSpecs = self.dbProxy.get_jobs_with_worker_id(workSpec.workerID,
                                                                                 None, True)
                                 # post processing
                                 messenger.post_processing(workSpec, jobSpecs, queue_config.mapType)
                             workSpec.post_processed()
-                            newStatus = WorkSpec.ST_running
-                        elif len(retMap[workerID]['filesToStageOut']) > 0 or \
-                                len(retMap[workerID]['eventsToUpdate']) > 0:
                             newStatus = WorkSpec.ST_running
                         # reset modification time to immediately trigger subsequent lookup
                         workSpec.trigger_next_lookup()
