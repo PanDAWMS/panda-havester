@@ -112,6 +112,8 @@ class Submitter(AgentBase):
                         else:
                             workSpec.hasJob = 1
                             workSpec.set_jobspec_list(okJobs)
+                        # map type
+                        workSpec.mapType = queueConfig.mapType
                         # queue name
                         workSpec.computingSite = queueConfig.queueName
                         # set access point
@@ -136,6 +138,11 @@ class Submitter(AgentBase):
                         continue
                     # setup access points
                     messenger.setup_access_points(workSpecList)
+                    # feed jobs
+                    for workSpec in workSpecList:
+                        if workSpec.hasJob == 1:
+                            tmpStat = messenger.feed_jobs(workSpec, workSpec.get_jobspec_list())
+                            tmpLog.debug('sent jobs to workerID={0} with {1}'.format(workSpec.workerID, tmpStat))
                     # submit
                     tmpLog.debug('submitting {0} workers'.format(len(workSpecList)))
                     workSpecList, tmpRetList, tmpStrList = self.submit_workers(submitterCore, workSpecList)
@@ -150,7 +157,6 @@ class Submitter(AgentBase):
                             workSpec.set_status(WorkSpec.ST_running)
                         else:
                             workSpec.set_status(WorkSpec.ST_submitted)
-                        workSpec.mapType = queueConfig.mapType
                         workSpec.submitTime = timeNow
                         workSpec.modificationTime = timeNow
                         # prefetch events
@@ -177,10 +183,6 @@ class Submitter(AgentBase):
                                 tmpLog.error('failed to register a worker for PandaID={0} with batchID={1}'.format(
                                     jobSpec.PandaID,
                                     workSpec.batchID))
-                        # feed jobs
-                        if tmpStat and workSpec.hasJob == 1:
-                            tmpStat = messenger.feed_jobs(workSpec, jobList)
-                            tmpLog.debug('sent jobs to workerID={0} with {1}'.format(workSpec.workerID, tmpStat))
                     # release jobs
                     self.dbProxy.release_jobs(pandaIDs, lockedBy)
             mainLog.debug('done')
