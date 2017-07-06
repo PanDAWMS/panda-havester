@@ -64,6 +64,13 @@ class DBProxy:
             self.usingAppLock = False
         else:
             self.usingAppLock = True
+        self.thrName = None
+        self.verbLog = None
+        if harvester_config.db.verbose:
+            self.verbLog = core_utils.make_logger(_logger, method_name='execute')
+            self.thrName = threading.current_thread()
+            if self.thrName is not None:
+                self.thrName = self.thrName.ident
 
     # convert param dict to list
     def convert_params(self, sql, varmap):
@@ -96,29 +103,22 @@ class DBProxy:
 
     # wrapper for execute
     def execute(self, sql, varmap=None):
-        thrName = None
-        verbLog = None
-        if harvester_config.db.verbose:
-            verbLog = core_utils.make_logger(_logger)
-            thrName = threading.current_thread()
-            if thrName is not None:
-                thrName = thrName.ident
         if varmap is None:
             varmap = dict()
         # get lock if application side lock is used
         if self.usingAppLock and not self.lockDB:
             if harvester_config.db.verbose:
-                verbLog.debug('thr={0} locking'.format(thrName))
+                self.verbLog.debug('thr={0} locking'.format(self.thrName))
             conLock.acquire()
             if harvester_config.db.verbose:
-                verbLog.debug('thr={0} locked'.format(thrName))
+                self.verbLog.debug('thr={0} locked'.format(self.thrName))
         # execute
         try:
             # verbose
             if harvester_config.db.verbose:
-                verbLog.debug('thr={3} sql={0} var={1} exec={2}'.format(sql, str(varmap),
-                                                                        inspect.stack()[1][3],
-                                                                        thrName))
+                self.verbLog.debug('thr={3} sql={0} var={1} exec={2}'.format(sql, str(varmap),
+                                                                             inspect.stack()[1][3],
+                                                                             self.thrName))
             # convert param dict
             newSQL, params = self.convert_params(sql, varmap)
             # execute
@@ -127,33 +127,26 @@ class DBProxy:
             # release lock
             if self.usingAppLock and not self.lockDB:
                 if harvester_config.db.verbose:
-                    verbLog.debug('thr={0} release'.format(thrName))
+                    self.verbLog.debug('thr={0} release'.format(self.thrName))
                 conLock.release()
         # return
         return retVal
 
     # wrapper for executemany
     def executemany(self, sql, varmap_list):
-        thrName = None
-        verbLog = None
-        if harvester_config.db.verbose:
-            verbLog = core_utils.make_logger(_logger)
-            thrName = threading.current_thread()
-            if thrName is not None:
-                thrName = thrName.ident
         # get lock
         if self.usingAppLock and not self.lockDB:
             if harvester_config.db.verbose:
-                verbLog.debug('thr={0} locking'.format(thrName))
+                self.verbLog.debug('thr={0} locking'.format(self.thrName))
             conLock.acquire()
             if harvester_config.db.verbose:
-                verbLog.debug('thr={0} locked'.format(thrName))
+                self.verbLog.debug('thr={0} locked'.format(self.thrName))
         try:
             # verbose
             if harvester_config.db.verbose:
-                verbLog.debug('thr={3} sql={0} var={1} exec={2}'.format(sql, str(varmap_list),
-                                                                        inspect.stack()[1][3],
-                                                                        thrName))
+                self.verbLog.debug('thr={3} sql={0} var={1} exec={2}'.format(sql, str(varmap_list),
+                                                                             inspect.stack()[1][3],
+                                                                             self.thrName))
             # convert param dict
             paramList = []
             newSQL = sql
@@ -168,7 +161,7 @@ class DBProxy:
             # release lock
             if self.usingAppLock and not self.lockDB:
                 if harvester_config.db.verbose:
-                    verbLog.debug('thr={0} release'.format(thrName))
+                    self.verbLog.debug('thr={0} release'.format(self.thrName))
                 conLock.release()
         # return
         return retVal
@@ -179,6 +172,8 @@ class DBProxy:
             self.con.commit()
         finally:
             if self.usingAppLock and self.lockDB:
+                if harvester_config.db.verbose:
+                    self.verbLog.debug('thr={0} release with commit'.format(self.thrName))
                 conLock.release()
                 self.lockDB = False
 
@@ -188,6 +183,8 @@ class DBProxy:
             self.con.rollback()
         finally:
             if self.usingAppLock and self.lockDB:
+                if harvester_config.db.verbose:
+                    self.verbLog.debug('thr={0} release with rollback'.format(self.thrName))
                 conLock.release()
                 self.lockDB = False
 
@@ -242,7 +239,21 @@ class DBProxy:
                 self.commit()
                 tmpLog.debug('made {0}'.format(table_name))
             else:
-                tmpLog.debug('reuse {0}'.format(table_name))
+                # check table
+                missingAttrs = self.check_table(cls, table_name, True)
+                for attr in cls.attributesWithTypes:
+                    if attr not in missingAttrs:
+                        continue
+                    # add column
+                    sqlA = 'ALTER TABLE {0} ADD COLUMN '.format(table_name)
+                    # split to name and type
+                    attrName, attrType = attr.split(':')
+                    attrType = self.type_conversion(attrType)
+                    sqlA += '{0} {1},'.format(attrName, attrType)
+                    self.execute(sqlA)
+                    # commit
+                    self.commit()
+                    tmpLog.debug('added {0} to {1}'.format(attr, table_name))
         except:
             # roll back
             self.rollback()
@@ -278,7 +289,7 @@ class DBProxy:
         self.add_seq_number('SEQ_workerID', 1)
 
     # check table
-    def check_table(self, cls, table_name):
+    def check_table(self, cls, table_name, get_missing=False):
         # get columns in DB
         varMap = dict()
         if harvester_config.db.engine == 'mariadb':
@@ -301,8 +312,11 @@ class DBProxy:
         for attr in cls.attributesWithTypes:
             attrName, attrType = attr.split(':')
             if attrName not in colMap:
-                attrType = self.type_conversion(attrType)
-                outStrs.append('{0} {1} is missing in {2}'.format(attrName, attrType, table_name))
+                if get_missing:
+                    outStrs.append(attrName)
+                else:
+                    attrType = self.type_conversion(attrType)
+                    outStrs.append('{0} {1} is missing in {2}'.format(attrName, attrType, table_name))
         return outStrs
 
     # insert jobs
@@ -798,10 +812,17 @@ class DBProxy:
             sqlR += JobWorkerRelationSpec.bind_values_expression()
             # sql to get number of workers
             sqlNW = "SELECT DISTINCT workerID FROM {0} WHERE PandaID=:pandaID ".format(jobWorkerTableName)
+            # sql to decrement nNewWorkers
+            sqlDN = "UPDATE {0} SET nNewWorkers=nNewWorkers-1 ".format(pandaQueueTableName)
+            sqlDN += "WHERE queueName=:queueName AND nNewWorkers IS NOT NULL AND nNewWorkers>0 "
             # insert worker if new
             if workspec.isNew:
                 varMap = workspec.values_list()
                 self.execute(sqlI, varMap)
+                # decrement nNewWorkers
+                varMap = dict()
+                varMap[':queueName'] = workspec.computingSite
+                self.execute(sqlDN, varMap)
             else:
                 varMap = workspec.values_map(only_changed=True)
                 varMap[':workerID'] = workspec.workerID
@@ -870,7 +891,7 @@ class DBProxy:
             sqlS += "ORDER BY submitTime "
             sqlS += "FOR UPDATE "
             # sql to get queues
-            sqlQ = "SELECT queueName FROM {0} ".format(pandaQueueTableName)
+            sqlQ = "SELECT queueName,nNewWorkers FROM {0} ".format(pandaQueueTableName)
             sqlQ += "WHERE siteName=:siteName "
             # sql to count nQueue
             sqlN = "SELECT status,COUNT(*) cnt FROM {0} ".format(workTableName)
@@ -891,7 +912,7 @@ class DBProxy:
                 varMap[':siteName'] = siteName
                 self.execute(sqlQ, varMap)
                 resQ = self.cur.fetchall()
-                for queueName, in resQ:
+                for queueName, nNewWorkers in resQ:
                     # count nQueue
                     varMap = dict()
                     varMap[':computingSite'] = queueName
@@ -909,7 +930,8 @@ class DBProxy:
                     # add
                     retMap[queueName] = {'nReady': nReady,
                                          'nRunning': nRunning,
-                                         'nQueue': nQueue}
+                                         'nQueue': nQueue,
+                                         'nNewWorkers': nNewWorkers}
                     # update timestamp
                     varMap = dict()
                     varMap[':queueName'] = queueName
@@ -2015,6 +2037,50 @@ class DBProxy:
             # return
             return False
 
+    # get commands for a receiver
+    def get_commands_for_receiver(self, receiver, command_pattern=None):
+        try:
+            # get logger
+            tmpLog = core_utils.make_logger(_logger)
+            tmpLog.debug('start')
+            # sql to get commands
+            varMap = dict()
+            varMap[':receiver'] = receiver
+            varMap[':processed'] = 0
+            sqlG = "SELECT {0} FROM {1} ".format(CommandSpec.column_names(), commandTableName)
+            sqlG += "WHERE receiver=:receiver AND processed=:processed "
+            if command_pattern is not None:
+                varMap[':command'] = command_pattern
+                if '%' in command_pattern:
+                    sqlG += "AND command LIKE :command "
+                else:
+                    sqlG += "AND command=:command "
+            sqlG += "FOR UPDATE "
+            # sql to lock command
+            sqlL = "UPDATE {0} SET processed=:processed WHERE command_id=:command_id ".format(commandTableName)
+            self.execute(sqlG, varMap)
+            commandSpecList = []
+            for res in self.cur.fetchall():
+                # make command
+                commandSpec = CommandSpec()
+                commandSpec.pack(res)
+                # lock
+                varMap = dict()
+                varMap[':command_id'] = commandSpec.command_id
+                varMap[':processed'] = 1
+                self.execute(sqlL, varMap)
+                # append
+                commandSpecList.append(commandSpec)
+            # commit
+            self.commit()
+            tmpLog.debug('got {0} commands'.format(len(commandSpecList)))
+            return commandSpecList
+        except:
+            # dump error
+            core_utils.dump_error_message(_logger)
+            # return
+            return []
+
     # get command ids that have been processed and need to be acknowledged to panda server
     def get_commands_ack(self):
         try:
@@ -2130,6 +2196,62 @@ class DBProxy:
             self.commit()
             tmpLog.debug('got {0} workers'.format(len(retVal)))
             return retVal
+        except:
+            # roll back
+            self.rollback()
+            # dump error
+            core_utils.dump_error_message(_logger)
+            # return
+            return {}
+
+    # get worker stats
+    def get_worker_stats(self, site_name):
+        try:
+            # get logger
+            tmpLog = core_utils.make_logger(_logger)
+            tmpLog.debug('start')
+            # get nQueueLimit
+            sqlQ = "SELECT queueName,nNewWorkers FROM {0} WHERE siteName=:siteName ".format(pandaQueueTableName)
+            varMap = dict()
+            varMap[':siteName'] = site_name
+            self.execute(sqlQ, varMap)
+            resQ = self.cur.fetchall()
+            retMap = dict()
+            for computingSite, nNewWorkers in resQ:
+                # extract resource type
+                resourceType = computingSite.split('/')[-1]
+                if resourceType not in retMap:
+                    retMap[resourceType] = {
+                        'running': 0,
+                        'submitted': 0,
+                        'to_submit': nNewWorkers
+                    }
+            # get worker stats
+            sqlW = "SELECT wt.status,wt.computingSite,COUNT(*) cnt "
+            sqlW += "FROM {0} wt, {1} pq ".format(workTableName, pandaQueueTableName)
+            sqlW += "WHERE pq.siteName=:siteName AND wt.computingSite=pq.queueName AND wt.status IN (:st1,:st2) "
+            sqlW += "GROUP BY wt.status,wt.computingSite "
+            # get worker stats
+            varMap = dict()
+            varMap[':siteName'] = site_name
+            varMap[':st1'] = 'running'
+            varMap[':st2'] = 'submitted'
+            self.execute(sqlW, varMap)
+            resW = self.cur.fetchall()
+            for workerStatus, computingSite, cnt in resW:
+                # extract resource type
+                resourceType = computingSite.split('/')[-1]
+                if resourceType not in retMap:
+                    retMap[resourceType] = {
+                        'running': 0,
+                        'submitted': 0,
+                        'to_submit': 0
+                    }
+                retMap[resourceType][workerStatus] = cnt
+            # commit
+            self.commit()
+            tmpLog.debug('got {0}'.format(str(retMap)))
+            return retMap
         except:
             # roll back
             self.rollback()
@@ -2330,3 +2452,37 @@ class DBProxy:
             core_utils.dump_error_message(_logger)
             # return
             return False
+
+    # set nQueueLimit
+    def set_queue_limit(self, site_name, params):
+        try:
+            # get logger
+            tmpLog = core_utils.make_logger(_logger, 'siteName={0}'.format(site_name))
+            tmpLog.debug('start')
+            # sql to set nQueueLimit
+            sqlQ = "UPDATE {0} SET nNewWorkers=:nQueue WHERE queueName=:queueName ".format(pandaQueueTableName)
+            # set all queues
+            nUp = 0
+            for param, value in params.iteritems():
+                queueName = site_name
+                # pseudo queue name
+                if param is not None:
+                    queueName += "/{0}".format(param)
+                varMap = dict()
+                varMap[':nQueue'] = value
+                varMap[':queueName'] = queueName
+                self.execute(sqlQ, varMap)
+                iUp = self.cur.rowcount
+                nUp += iUp
+                tmpLog.debug('set nNewWorkers={0} to {1} with {2}'.format(value, queueName, iUp))
+            # commit
+            self.commit()
+            tmpLog.debug('updated {0} queues'.format(nUp))
+            return nUp
+        except:
+            # roll back
+            self.rollback()
+            # dump error
+            core_utils.dump_error_message(_logger)
+            # return
+            return None

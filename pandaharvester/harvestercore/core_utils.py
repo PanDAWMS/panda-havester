@@ -29,9 +29,12 @@ def setup_logger(name=None):
 
 
 # make logger
-def make_logger(tmp_log, token=None):
+def make_logger(tmp_log, token=None, method_name=None):
     # get method name of caller
-    tmpStr = inspect.stack()[1][3]
+    if method_name is None:
+        tmpStr = inspect.stack()[1][3]
+    else:
+        tmpStr = method_name
     if token is not None:
         tmpStr += ' <{0}>'.format(token)
     else:
@@ -199,6 +202,8 @@ def update_job_attributes_with_workers(map_type, jobspec_list, workspec_list, fi
                     eventSpec.from_data(data)
                     jobSpec.add_event(eventSpec, None)
         jobSpec.status, jobSpec.subStatus = workSpec.convert_to_job_status()
+        if workSpec.new_status:
+            jobSpec.trigger_propagation()
     elif map_type == WorkSpec.MT_MultiWorkers:
         jobSpec = jobspec_list[0]
         # scan all workers
@@ -209,6 +214,8 @@ def update_job_attributes_with_workers(map_type, jobspec_list, workspec_list, fi
         nCore = 0
         nCoreTime = 0
         for workSpec in workspec_list:
+            if workSpec.new_status:
+                jobSpec.trigger_propagation()
             # the the worker is running
             if workSpec.status in [WorkSpec.ST_running]:
                 isRunning = True

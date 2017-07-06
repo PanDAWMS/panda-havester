@@ -97,7 +97,10 @@ class Communicator:
     # check server
     def check_panda(self):
         tmpStat, tmpRes = self.post_ssl('isAlive', {})
-        return tmpStat, tmpRes.status_code, tmpRes.text
+        if tmpStat :
+            return tmpStat, tmpRes.status_code, tmpRes.text
+        else :
+            return tmpStat,tmpRes
 
     # get jobs
     def get_jobs(self, site_name, node_name, prod_source_label, computing_element, n_jobs):
@@ -348,3 +351,67 @@ class Communicator:
                 tmpLog.error('conversion failure from {0}'.format(tmpRes.text))
         tmpLog.debug('done with {0} : {1}'.format(retCode, tmpStr))
         return retCode, tmpStr
+
+    # update worker stats
+    def update_worker_stats(self, site_name, stats):
+        tmpLog = core_utils.make_logger(_logger)
+        tmpLog.debug('start')
+        data = dict()
+        data['harvesterID'] = harvester_config.master.harvester_id
+        data['siteName'] = site_name
+        data['paramsList'] = json.dumps(stats)
+        tmpLog.debug('update stats for {0}'.format(site_name))
+        tmpStat, tmpRes = self.post_ssl('reportWorkerStats', data)
+        errStr = 'OK'
+        if tmpStat is False:
+            errStr = core_utils.dump_error_message(tmpLog, tmpRes)
+        else:
+            try:
+                retCode, retMsg = tmpRes.json()
+                if not retCode:
+                    tmpStat = False
+                    errStr = retMsg
+            except:
+                tmpStat = False
+                errStr = core_utils.dump_error_message(tmpLog)
+                tmpLog.error('conversion failure from {0}'.format(tmpRes.text))
+        tmpLog.debug('done with {0}:{1}'.format(tmpStat, errStr))
+        return tmpStat, errStr
+
+    # check jobs
+    def check_jobs(self, jobspec_list):
+        tmpLog = core_utils.make_logger(_logger)
+        tmpLog.debug('start')
+        retList = []
+        nLookup = 100
+        iLookup = 0
+        while iLookup < len(jobspec_list):
+            ids = []
+            for jobSpec in jobspec_list[iLookup:iLookup+nLookup]:
+                ids.append(str(jobSpec.PandaID))
+            iLookup += nLookup
+            data = dict()
+            data['ids'] = ','.join(ids)
+            tmpStat, tmpRes = self.post_ssl('checkJobStatus', data)
+            errStr = 'OK'
+            if tmpStat is False:
+                errStr = core_utils.dump_error_message(tmpLog, tmpRes)
+                tmpRes = None
+            else:
+                try:
+                    tmpRes = tmpRes.json()
+                except:
+                    tmpRes = None
+                    errStr = core_utils.dump_error_message(tmpLog)
+            for idx, pandaID in enumerate(ids):
+                if tmpRes is None or 'data' not in tmpRes or idx >= len(tmpRes['data']):
+                    retMap = dict()
+                    retMap['StatusCode'] = 999
+                    retMap['ErrorDiag'] = errStr
+                else:
+                    retMap = tmpRes['data'][idx]
+                    retMap['StatusCode'] = 0
+                    retMap['ErrorDiag'] = errStr
+                retList.append(retMap)
+                tmpLog.debug('got {0} for PandaID={1}'.format(str(retMap), pandaID))
+        return retList
