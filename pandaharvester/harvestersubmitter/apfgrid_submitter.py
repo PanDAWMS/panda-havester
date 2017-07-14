@@ -9,15 +9,18 @@ from pandaharvester.harvestercore.work_spec import WorkSpec
 
 from autopyfactory.plugins.factory.config.Agis import Agis
 from autopyfactory.configloader import Config
-from autopyfactory.queueslib import StaticAPFQueueJC 
+from autopyfactory.queueslib import SubmitAPFQueue 
 from autopyfactory.authmanager import AuthManager
 # setup base logger
 baseLogger = core_utils.setup_logger()
 
 class APFGridSubmitter(PluginBase):
     
+    factorymock = None
     authman = None
     agis = None
+    logserver = None
+    cleanlogs = None
   
     def __init__(self, **kwarg):
         PluginBase.__init__(self, **kwarg)
@@ -28,6 +31,11 @@ class APFGridSubmitter(PluginBase):
         self.log.debug('Reading config: %s' % factoryconffile)
         okread = cp.read(factoryconffile)
         self.log.debug('Successfully read %s' % okread)       
+
+        # Setup factory mock object. 
+        from autopyfactory.factory import Factory
+        if APFGridSubmitter.factorymock is None:
+            APFGridSubmitter.factorymock = Factory.getFactoryMock(fcl=cp)
         
         # Setup AGIS
         if APFGridSubmitter.agis is None:
@@ -45,6 +53,14 @@ class APFGridSubmitter(PluginBase):
             APFGridSubmitter.authman = AuthManager(ac)
         self.authman = APFGridSubmitter.authman           
         APFGridSubmitter.authman.startHandlers()        
+        
+        # Setup logserver
+        
+        
+        
+        # Setup cleanlogs
+        
+        
                 
         self.log.debug('APFGridSubmitter initialized.')       
 
@@ -119,7 +135,7 @@ class APFGridSubmitter(PluginBase):
                 pqc.set(section, 'factoryconf', ac) 
                 self.log.debug("Section config= %s" % pqc)
                 self.log.debug("Making APF queue for PQ %s with label %s"% (pq, section))
-                apfq = StaticAPFQueueJC( pqc, self.authman )
+                apfq = SubmitAPFQueue( pqc, self.authman )
                 self.log.debug("Successfully made APFQueue")
                 joblist = []
                 for ws in wsmap[pq]:
