@@ -7,7 +7,7 @@ from pandaharvester.harvestercore import core_utils
 from pandaharvester.harvestercore.plugin_base import PluginBase
 from pandaharvester.harvestercore.work_spec import WorkSpec
 
-from autopyfactory.plugins.factory.config.Agis import Agis
+from autopyfactory.plugins.factory.config.queues.Agis import Agis
 from autopyfactory.configloader import Config
 from autopyfactory.queueslib import SubmitAPFQueue 
 from autopyfactory.authmanager import AuthManager
