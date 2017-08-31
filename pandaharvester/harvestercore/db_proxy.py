@@ -19,6 +19,7 @@ from cache_spec import CacheSpec
 from seq_number_spec import SeqNumberSpec
 from panda_queue_spec import PandaQueueSpec
 from job_worker_relation_spec import JobWorkerRelationSpec
+from process_lock_spec import ProcessLockSpec
 
 import core_utils
 from pandaharvester.harvesterconfig import harvester_config
@@ -36,6 +37,7 @@ eventTableName = 'event_table'
 seqNumberTableName = 'seq_table'
 pandaQueueTableName = 'pq_table'
 jobWorkerTableName = 'jw_table'
+processLockTableName = 'lock_table'
 
 # connection lock
 conLock = threading.Lock()
@@ -47,8 +49,16 @@ class DBProxy:
     def __init__(self):
         if harvester_config.db.engine == 'mariadb':
             import mysql.connector
+            if hasattr(harvester_config.db, 'host'):
+                host = harvester_config.db.host
+            else:
+                host = '127.0.0.1'
+            if hasattr(harvester_config.db, 'port'):
+                port = harvester_config.db.port
+            else:
+                port = 3306
             self.con = mysql.connector.connect(user=harvester_config.db.user, passwd=harvester_config.db.password,
-                                               db=harvester_config.db.schema)
+                                               db=harvester_config.db.schema, host=host, port=port)
             self.cur = self.con.cursor(named_tuple=True)
         else:
             import sqlite3
@@ -199,9 +209,13 @@ class DBProxy:
                 attr_type = attr_type.replace('text', 'varchar(256)')
             elif attr_type.startswith('blob'):
                 attr_type = attr_type.replace('blob', 'longtext')
+            elif attr_type.startswith('integer'):
+                attr_type = attr_type.replace('integer', 'bigint')
+            attr_type = attr_type.replace('autoincrement', 'auto_increment')
         elif harvester_config.db.engine == 'sqlite':
             if attr_type.startswith('varchar'):
                 attr_type = re.sub('varchar\(\d+\)', 'text', attr_type)
+            attr_type = attr_type.replace('auto_increment', 'autoincrement')
         return attr_type
 
     # make table
@@ -241,19 +255,21 @@ class DBProxy:
             else:
                 # check table
                 missingAttrs = self.check_table(cls, table_name, True)
-                for attr in cls.attributesWithTypes:
-                    if attr not in missingAttrs:
-                        continue
-                    # add column
-                    sqlA = 'ALTER TABLE {0} ADD COLUMN '.format(table_name)
-                    # split to name and type
-                    attrName, attrType = attr.split(':')
-                    attrType = self.type_conversion(attrType)
-                    sqlA += '{0} {1},'.format(attrName, attrType)
-                    self.execute(sqlA)
-                    # commit
-                    self.commit()
-                    tmpLog.debug('added {0} to {1}'.format(attr, table_name))
+                if len(missingAttrs) > 0:
+                    for attr in cls.attributesWithTypes:
+                        # split to name and type
+                        attrName, attrType = attr.split(':')
+                        attrType = self.type_conversion(attrType)
+                        # ony missing
+                        if attrName not in missingAttrs:
+                            continue
+                        # add column
+                        sqlA = 'ALTER TABLE {0} ADD COLUMN '.format(table_name)
+                        sqlA += '{0} {1}'.format(attrName, attrType)
+                        self.execute(sqlA)
+                        # commit
+                        self.commit()
+                        tmpLog.debug('added {0} to {1}'.format(attr, table_name))
         except:
             # roll back
             self.rollback()
@@ -273,6 +289,7 @@ class DBProxy:
         outStrs += self.make_table(SeqNumberSpec, seqNumberTableName)
         outStrs += self.make_table(PandaQueueSpec, pandaQueueTableName)
         outStrs += self.make_table(JobWorkerRelationSpec, jobWorkerTableName)
+        outStrs += self.make_table(ProcessLockSpec, processLockTableName)
         # dump error messages
         if len(outStrs) > 0:
             errMsg = "ERROR : Definitions of some database tables are incorrect. "
@@ -287,6 +304,8 @@ class DBProxy:
         self.fill_panda_queue_table(harvester_config.qconf.queueList, queue_config_mapper)
         # add sequential numbers
         self.add_seq_number('SEQ_workerID', 1)
+        # delete process locks
+        self.clean_process_locks()
 
     # check table
     def check_table(self, cls, table_name, get_missing=False):
@@ -326,15 +345,23 @@ class DBProxy:
         tmpLog.debug('{0} jobs'.format(len(jobspec_list)))
         try:
             # sql to insert a job
-            sql = "INSERT INTO {0} ({1}) ".format(jobTableName, JobSpec.column_names())
-            sql += JobSpec.bind_values_expression()
+            sqlJ = "INSERT INTO {0} ({1}) ".format(jobTableName, JobSpec.column_names())
+            sqlJ += JobSpec.bind_values_expression()
+            # sql to insert a file
+            sqlF = "INSERT INTO {0} ({1}) ".format(fileTableName, FileSpec.column_names())
+            sqlF += FileSpec.bind_values_expression()
             # loop over all jobs
-            varMaps = []
+            varMapsJ = []
+            varMapsF = []
             for jobSpec in jobspec_list:
                 varMap = jobSpec.values_list()
-                varMaps.append(varMap)
+                varMapsJ.append(varMap)
+                for fileSpec in jobSpec.inFiles:
+                    varMap = fileSpec.values_list()
+                    varMapsF.append(varMap)
             # insert
-            self.executemany(sql, varMaps)
+            self.executemany(sqlJ, varMapsJ)
+            self.executemany(sqlF, varMapsF)
             # commit
             self.commit()
             # return
@@ -348,7 +375,7 @@ class DBProxy:
             return False
 
     # get job
-    def get_job(self, panda_id, with_file_status=None):
+    def get_job(self, panda_id):
         try:
             # get logger
             tmpLog = core_utils.make_logger(_logger, 'PandaID={0}'.format(panda_id))
@@ -361,27 +388,25 @@ class DBProxy:
             varMap[':pandaID'] = panda_id
             self.execute(sql, varMap)
             resJ = self.cur.fetchone()
-            # commit
-            self.commit()
             if resJ is None:
-                return None
-            # make job
-            jobSpec = JobSpec()
-            jobSpec.pack(resJ)
-            # get files
-            if with_file_status is not None:
-                # sql to get files
+                jobSpec = None
+            else:
+                # make job
+                jobSpec = JobSpec()
+                jobSpec.pack(resJ)
+                # get files
                 sqlF = "SELECT {0} FROM {1} ".format(FileSpec.column_names(), fileTableName)
-                sqlF += "WHERE PandaID=:PandaID AND status=:status "
+                sqlF += "WHERE PandaID=:PandaID "
                 varMap = dict()
                 varMap[':PandaID'] = panda_id
-                varMap[':status'] = with_file_status
                 self.execute(sqlF, varMap)
                 resFileList = self.cur.fetchall()
                 for resFile in resFileList:
                     fileSpec = FileSpec()
                     fileSpec.pack(resFile)
-                    jobSpec.add_out_file(fileSpec)
+                    jobSpec.add_file(fileSpec)
+            # commit
+            self.commit()
             tmpLog.debug('done')
             # return
             return jobSpec
@@ -393,7 +418,7 @@ class DBProxy:
             # return
             return None
 
-    # get jobs (fetch entire jobTable)
+    # get all jobs (fetch entire jobTable)
     def get_jobs(self):
         try:
             # get logger
@@ -426,7 +451,7 @@ class DBProxy:
             return None
 
     # update job
-    def update_job(self, jobspec, criteria=None):
+    def update_job(self, jobspec, criteria=None, update_in_file=False):
         try:
             # get logger
             tmpLog = core_utils.make_logger(_logger, 'PandaID={0} subStatus={1}'.format(jobspec.PandaID,
@@ -455,6 +480,26 @@ class DBProxy:
                         sqlE += "WHERE eventRangeID=:eventRangeID "
                         varMap[':eventRangeID'] = eventSpec.eventRangeID
                         self.execute(sqlE, varMap)
+                # update input file
+                if update_in_file:
+                    for fileSpec in jobspec.inFiles:
+                        varMap = fileSpec.values_map(only_changed=True)
+                        if varMap != {}:
+                            sqlF = "UPDATE {0} SET {1} ".format(fileTableName,
+                                                                fileSpec.bind_update_changes_expression())
+                            sqlF += "WHERE fileID=:fileID "
+                            varMap[':fileID'] = fileSpec.fileID
+                            self.execute(sqlF, varMap)
+                else:
+                    # set file status to done if jobs are done
+                    if jobspec.is_final_status():
+                        varMap = dict()
+                        varMap[':PandaID'] = jobspec.PandaID
+                        varMap[':type'] = 'input'
+                        varMap[':status'] = 'done'
+                        sqlF = "UPDATE {0} SET status=:status ".format(fileTableName)
+                        sqlF += "WHERE PandaID=:PandaID AND fileType=:type "
+                        self.execute(sqlF, varMap)
             # commit
             self.commit()
             tmpLog.debug('done with {0}'.format(nRow))
@@ -491,9 +536,10 @@ class DBProxy:
                 nRow = self.cur.rowcount
                 # commit
                 self.commit()
+                tmpLog.debug('done with {0}'.format(nRow))
             else:
                 nRow = None
-            tmpLog.debug('done with {0}'.format(nRow))
+                tmpLog.debug('skip since no updated attributes')
             # return
             return nRow
         except:
@@ -535,6 +581,17 @@ class DBProxy:
                     self.execute(sqlC, varMap)
                     resC = self.cur.fetchone()
                     if resC is not None:
+                        # update limits just in case
+                        sqlU = "UPDATE {0} ".format(pandaQueueTableName)
+                        sqlU += "SET nQueueLimitJob=:nQueueLimitJob,nQueueLimitWorker=:nQueueLimitWorker,"
+                        sqlU += "maxWorkers=:maxWorkers "
+                        sqlU += "WHERE queueName=:queueName "
+                        varMap = dict()
+                        varMap[':queueName'] = queueName
+                        varMap[':nQueueLimitJob'] = queueConfig.nQueueLimitJob
+                        varMap[':nQueueLimitWorker'] = queueConfig.nQueueLimitWorker
+                        varMap[':maxWorkers'] = queueConfig.maxWorkers
+                        self.execute(sqlU, varMap)
                         continue
                     # insert queue
                     varMap = dict()
@@ -711,9 +768,10 @@ class DBProxy:
             # return
             return []
 
-    # get jobs in substatus
-    def get_jobs_in_sub_status(self, sub_status, max_jobs, time_column=None, lock_column=None, interval_with_lock=None,
-                               interval_without_lock=None, locked_by=None, new_sub_status=None):
+    # get jobs in sub status
+    def get_jobs_in_sub_status(self, sub_status, max_jobs, time_column=None, lock_column=None,
+                               interval_without_lock=None, interval_with_lock=None,
+                               locked_by=None, new_sub_status=None):
         try:
             # get logger
             if locked_by is None:
@@ -722,7 +780,7 @@ class DBProxy:
                 msgPfx = 'thr={0}'.format(locked_by)
             tmpLog = core_utils.make_logger(_logger, msgPfx)
             tmpLog.debug('start subStatus={0} timeColumn={1}'.format(sub_status, time_column))
-            # sql to count jobs beeing processed
+            # sql to count jobs being processed
             sqlC = "SELECT COUNT(*) cnt FROM {0} ".format(jobTableName)
             sqlC += "WHERE ({0} IS NOT NULL AND subStatus=:subStatus) ".format(lock_column)
             sqlC += "OR subStatus=:newSubStatus "
@@ -736,7 +794,7 @@ class DBProxy:
                 if nProcessing >= max_jobs:
                     # commit
                     self.commit()
-                    tmpLog.debug('enough jobs {0} are beeing processed'.format(len(nProcessing)))
+                    tmpLog.debug('enough jobs {0} are being processed'.format(len(nProcessing)))
                     return []
                 max_jobs -= nProcessing
             # sql to get jobs
@@ -747,7 +805,7 @@ class DBProxy:
                 if interval_with_lock is not None:
                     sql += "OR ({0}<:lockTimeLimit AND {1} IS NOT NULL) ".format(time_column, lock_column)
                 if interval_without_lock is not None:
-                    sql += "OR {0}<:updateTimeLimit ".format(time_column)
+                    sql += "OR ({0}<:updateTimeLimit AND {1} IS NULL) ".format(time_column, lock_column)
                 sql += ') '
                 sql += "ORDER BY {0} ".format(time_column)
             sql += "LIMIT {0} ".format(max_jobs)
@@ -755,6 +813,9 @@ class DBProxy:
             # sql to lock job
             sqlL = "UPDATE {0} SET {1}=:timeNow,{2}=:lockedBy ".format(jobTableName, time_column, lock_column)
             sqlL += "WHERE PandaID=:PandaID "
+            # sql to get file
+            sqlGF = "SELECT {0} FROM {1} ".format(FileSpec.column_names(), fileTableName)
+            sqlGF += "WHERE PandaID=:PandaID AND fileType=:type "
             # get jobs
             timeNow = datetime.datetime.utcnow()
             varMap = dict()
@@ -783,6 +844,17 @@ class DBProxy:
                 else:
                     nRow = 1
                 if nRow > 0:
+                    # get files
+                    varMap = dict()
+                    varMap[':PandaID'] = jobSpec.PandaID
+                    varMap[':type'] = 'input'
+                    self.execute(sqlGF, varMap)
+                    resGF = self.cur.fetchall()
+                    for resFile in resGF:
+                        fileSpec = FileSpec()
+                        fileSpec.pack(resFile)
+                        jobSpec.add_in_file(fileSpec)
+                    # append
                     jobSpecList.append(jobSpec)
             # commit
             self.commit()
@@ -813,7 +885,8 @@ class DBProxy:
             # sql to get number of workers
             sqlNW = "SELECT DISTINCT workerID FROM {0} WHERE PandaID=:pandaID ".format(jobWorkerTableName)
             # sql to decrement nNewWorkers
-            sqlDN = "UPDATE {0} SET nNewWorkers=nNewWorkers-1 ".format(pandaQueueTableName)
+            sqlDN = "UPDATE {0} ".format(pandaQueueTableName)
+            sqlDN += "SET nNewWorkers=nNewWorkers-1 "
             sqlDN += "WHERE queueName=:queueName AND nNewWorkers IS NOT NULL AND nNewWorkers>0 "
             # insert worker if new
             if workspec.isNew:
@@ -885,13 +958,14 @@ class DBProxy:
             tmpLog.debug('start')
             retMap = dict()
             siteName = None
+            resourceMap = dict()
             # sql to get a site
             sqlS = "SELECT siteName FROM {0} ".format(pandaQueueTableName)
             sqlS += "WHERE submitTime IS NULL OR submitTime<:timeLimit "
             sqlS += "ORDER BY submitTime "
             sqlS += "FOR UPDATE "
             # sql to get queues
-            sqlQ = "SELECT queueName,nNewWorkers FROM {0} ".format(pandaQueueTableName)
+            sqlQ = "SELECT queueName,resourceType,nNewWorkers FROM {0} ".format(pandaQueueTableName)
             sqlQ += "WHERE siteName=:siteName "
             # sql to count nQueue
             sqlN = "SELECT status,COUNT(*) cnt FROM {0} ".format(workTableName)
@@ -912,7 +986,7 @@ class DBProxy:
                 varMap[':siteName'] = siteName
                 self.execute(sqlQ, varMap)
                 resQ = self.cur.fetchall()
-                for queueName, nNewWorkers in resQ:
+                for queueName, resouceType, nNewWorkers in resQ:
                     # count nQueue
                     varMap = dict()
                     varMap[':computingSite'] = queueName
@@ -932,6 +1006,7 @@ class DBProxy:
                                          'nRunning': nRunning,
                                          'nQueue': nQueue,
                                          'nNewWorkers': nNewWorkers}
+                    resourceMap[resouceType] = queueName
                     # update timestamp
                     varMap = dict()
                     varMap[':queueName'] = queueName
@@ -943,18 +1018,20 @@ class DBProxy:
             # commit
             self.commit()
             tmpLog.debug('got {0}'.format(str(retMap)))
-            return retMap, siteName
+            return retMap, siteName, resourceMap
         except:
             # roll back
             self.rollback()
             # dump error
             core_utils.dump_error_message(_logger)
             # return
-            return {}, None
+            return {}, None, {}
 
     # get job chunks to make workers
     def get_job_chunks_for_workers(self, queue_name, n_workers, n_ready, n_jobs_per_worker, n_workers_per_job,
-                                   use_job_late_binding, check_interval, lock_interval, locked_by):
+                                   use_job_late_binding, check_interval, lock_interval, locked_by,
+                                   allow_job_mixture=False):
+        toCommit = False
         try:
             # get logger
             tmpLog = core_utils.make_logger(_logger, 'queue={0}'.format(queue_name))
@@ -964,73 +1041,114 @@ class DBProxy:
                 maxJobs = (n_workers + n_ready) * n_jobs_per_worker
             else:
                 maxJobs = -(-(n_workers + n_ready) // n_workers_per_job)
-            # sql to get jobs
-            sql = "SELECT {0} FROM {1} ".format(JobSpec.column_names(), jobTableName)
-            sql += "WHERE (subStatus IN (:subStat1,:subStat2) OR (subStatus IN (:subStat3,:subStat4) "
-            sql += "AND nWorkers IS NOT NULL AND nWorkersLimit IS NOT NULL AND nWorkers<nWorkersLimit)) "
-            sql += "AND (submitterTime IS NULL "
-            sql += "OR ((submitterTime<:lockTimeLimit AND lockedBy IS NOT NULL) "
-            sql += "OR submitterTime<:checkTimeLimit)) "
-            sql += "AND computingSite=:queueName "
-            sql += "ORDER BY currentPriority DESC,taskID,PandaID LIMIT {0} ".format(maxJobs)
-            sql += "FOR UPDATE "
+            # core part of sql
+            # submitted and running are for multi-workers
+            sqlCore = "WHERE (subStatus IN (:subStat1,:subStat2) OR (subStatus IN (:subStat3,:subStat4) "
+            sqlCore += "AND nWorkers IS NOT NULL AND nWorkersLimit IS NOT NULL AND nWorkers<nWorkersLimit)) "
+            sqlCore += "AND (submitterTime IS NULL "
+            sqlCore += "OR ((submitterTime<:lockTimeLimit AND lockedBy IS NOT NULL) "
+            sqlCore += "OR submitterTime<:checkTimeLimit)) "
+            sqlCore += "AND computingSite=:queueName "
             # sql to lock job
             sqlL = "UPDATE {0} SET submitterTime=:timeNow,lockedBy=:lockedBy ".format(jobTableName)
             sqlL += "WHERE PandaID=:PandaID "
-            # get jobs
             timeNow = datetime.datetime.utcnow()
-            varMap = dict()
-            varMap[':subStat1'] = 'prepared'
-            varMap[':subStat2'] = 'queued'
-            varMap[':subStat3'] = 'submitted'
-            varMap[':subStat4'] = 'running'
-            varMap[':queueName'] = queue_name
-            varMap[':lockTimeLimit'] = timeNow - datetime.timedelta(seconds=lock_interval)
-            varMap[':checkTimeLimit'] = timeNow - datetime.timedelta(seconds=check_interval)
-            self.execute(sql, varMap)
-            resList = self.cur.fetchall()
             jobChunkList = []
-            jobChunk = []
-            for res in resList:
-                # make job
-                jobSpec = JobSpec()
-                jobSpec.pack(res)
-                # new chunk
-                if len(jobChunk) > 0 and jobChunk[0].taskID != jobSpec.taskID:
-                    jobChunkList.append(jobChunk)
-                    jobChunk = []
-                # only prepared for new worker
-                if len(jobChunkList) >= n_ready and jobSpec.subStatus == 'queued':
-                    continue
-                jobChunk.append(jobSpec)
-                # enough jobs in chunk
-                if n_jobs_per_worker is not None and len(jobChunk) >= n_jobs_per_worker:
-                    jobChunkList.append(jobChunk)
-                    jobChunk = []
-                # one job per multiple workers
-                elif n_workers_per_job is not None:
-                    if jobSpec.nWorkersLimit is None:
-                        jobSpec.nWorkersLimit = n_workers_per_job
-                    for i in range(jobSpec.nWorkersLimit - jobSpec.nWorkers):
-                        jobChunkList.append(jobChunk)
-                    jobChunk = []
-                # lock job
+            # count jobs for nJobsPerWorker>1
+            nAvailableJobs = None
+            if n_jobs_per_worker is not None and n_jobs_per_worker > 1:
+                toCommit = True
+                # sql to count jobs
+                sqlC = "SELECT COUNT(*) cnt FROM {0} ".format(jobTableName)
+                sqlC += sqlCore
+                # count jobs
                 varMap = dict()
-                varMap[':PandaID'] = jobSpec.PandaID
-                varMap[':timeNow'] = timeNow
-                varMap[':lockedBy'] = locked_by
-                self.execute(sqlL, varMap)
-                jobSpec.lockedBy = locked_by
-                # enough job chunks
-                if len(jobChunkList) >= n_workers:
-                    break
+                varMap[':subStat1'] = 'prepared'
+                varMap[':subStat2'] = 'queued'
+                varMap[':subStat3'] = 'submitted'
+                varMap[':subStat4'] = 'running'
+                varMap[':queueName'] = queue_name
+                varMap[':lockTimeLimit'] = timeNow - datetime.timedelta(seconds=lock_interval)
+                varMap[':checkTimeLimit'] = timeNow - datetime.timedelta(seconds=check_interval)
+                self.execute(sqlC, varMap)
+                nAvailableJobs, = self.cur.fetchone()
+                maxJobs = int(min(maxJobs, nAvailableJobs) / n_jobs_per_worker) * n_jobs_per_worker
+            tmpStr = 'n_workers={0} n_ready={1} '.format(n_workers, n_ready)
+            tmpStr += 'n_jobs_per_worker={0} n_workers_per_job={1} '.format(n_jobs_per_worker, n_workers_per_job)
+            tmpStr += 'n_ava_jobs={0}'.format(nAvailableJobs)
+            tmpLog.debug(tmpStr)
+            if maxJobs == 0:
+                tmpStr = 'skip due to maxJobs=0'
+                tmpLog.debug(tmpStr)
+            else:
+                toCommit = True
+                # sql to get jobs
+                sql = "SELECT {0} FROM {1} ".format(JobSpec.column_names(), jobTableName)
+                sql += sqlCore
+                sql += "ORDER BY currentPriority DESC,taskID,PandaID LIMIT {0} ".format(maxJobs)
+                sql += "FOR UPDATE "
+                # get jobs
+                varMap = dict()
+                varMap[':subStat1'] = 'prepared'
+                varMap[':subStat2'] = 'queued'
+                varMap[':subStat3'] = 'submitted'
+                varMap[':subStat4'] = 'running'
+                varMap[':queueName'] = queue_name
+                varMap[':lockTimeLimit'] = timeNow - datetime.timedelta(seconds=lock_interval)
+                varMap[':checkTimeLimit'] = timeNow - datetime.timedelta(seconds=check_interval)
+                self.execute(sql, varMap)
+                resList = self.cur.fetchall()
+                tmpStr = 'fetched {0} jobs'.format(len(resList))
+                tmpLog.debug(tmpStr)
+                jobChunk = []
+                for res in resList:
+                    # make job
+                    jobSpec = JobSpec()
+                    jobSpec.pack(res)
+                    # new chunk
+                    if len(jobChunk) > 0 and jobChunk[0].taskID != jobSpec.taskID and not allow_job_mixture:
+                        tmpLog.debug('new chunk with {0} jobs due to taskID change'.format(len(jobChunk)))
+                        jobChunkList.append(jobChunk)
+                        jobChunk = []
+                    # only prepared for new worker
+                    if len(jobChunkList) >= n_ready and jobSpec.subStatus == 'queued':
+                        continue
+                    jobChunk.append(jobSpec)
+                    # enough jobs in chunk
+                    if n_jobs_per_worker is not None and len(jobChunk) >= n_jobs_per_worker:
+                        tmpLog.debug('new chunk with {0} jobs due to n_jobs_per_worker'.format(len(jobChunk)))
+                        jobChunkList.append(jobChunk)
+                        jobChunk = []
+                    # one job per multiple workers
+                    elif n_workers_per_job is not None:
+                        if jobSpec.nWorkersLimit is None:
+                            jobSpec.nWorkersLimit = n_workers_per_job
+                        for i in range(jobSpec.nWorkersLimit - jobSpec.nWorkers):
+                            tmpLog.debug('new chunk with {0} jobs due to n_workers_per_job'.format(len(jobChunk)))
+                            jobChunkList.append(jobChunk)
+                        jobChunk = []
+                    # enough job chunks
+                    if len(jobChunkList) >= n_workers:
+                        break
+                # lock jobs
+                for jobChunk in jobChunkList:
+                    for jobSpec in jobChunk:
+                        # lock job
+                        varMap = dict()
+                        varMap[':PandaID'] = jobSpec.PandaID
+                        varMap[':timeNow'] = timeNow
+                        varMap[':lockedBy'] = locked_by
+                        self.execute(sqlL, varMap)
+                        jobSpec.lockedBy = locked_by
             # commit
-            self.commit()
+            if toCommit:
+                self.commit()
             tmpLog.debug('got {0} job chunks'.format(len(jobChunkList)))
             return jobChunkList
         except:
             # roll back
-            self.rollback()
+            if toCommit:
+                self.rollback()
             # dump error
             core_utils.dump_error_message(_logger)
             # return
@@ -1058,6 +1176,9 @@ class DBProxy:
             # sql to get associated workers
             sqlG = "SELECT {0} FROM {1} ".format(WorkSpec.column_names(), workTableName)
             sqlG += "WHERE workerID=:workerID "
+            # sql to get associated PandaIDs
+            sqlP = "SELECT PandaID FROM {0} ".format(jobWorkerTableName)
+            sqlP += "WHERE workerID=:workerID "
             # get workerIDs
             timeNow = datetime.datetime.utcnow()
             varMap = dict()
@@ -1101,6 +1222,14 @@ class DBProxy:
                     if queueName is None:
                         queueName = workSpec.computingSite
                     workersList.append(workSpec)
+                    # get associated PandaIDs
+                    varMap = dict()
+                    varMap[':workerID'] = tmpWorkID
+                    self.execute(sqlP, varMap)
+                    resP = self.cur.fetchall()
+                    workSpec.pandaid_list = []
+                    for tmpPandaID, in resP:
+                        workSpec.pandaid_list.append(tmpPandaID)
                     # lock worker
                     varMap = dict()
                     varMap[':workerID'] = tmpWorkID
@@ -1263,13 +1392,17 @@ class DBProxy:
             # sql to check job
             sqlCJ = "SELECT status FROM {0} WHERE PandaID=:PandaID FOR UPDATE ".format(jobTableName)
             # sql to check file
-            sqlFC = "SELECT 1 FROM {0} WHERE PandaID=:PandaID AND lfn=:lfn ".format(fileTableName)
+            sqlFC = "SELECT {0} FROM {1} ".format(FileSpec.column_names(), fileTableName)
+            sqlFC += "WHERE PandaID=:PandaID AND lfn=:lfn "
+            # sql to check file with eventRangeID
+            sqlFE = "SELECT 1 FROM {0} ".format(fileTableName)
+            sqlFE += "WHERE PandaID=:PandaID AND lfn=:lfn AND eventRangeID=:eventRangeID ".format(fileTableName)
             # sql to insert file
             sqlFI = "INSERT INTO {0} ({1}) ".format(fileTableName, FileSpec.column_names())
             sqlFI += FileSpec.bind_values_expression()
             # sql to get pending files
             sqlFP = "SELECT fileID,fsize,lfn FROM {0} ".format(fileTableName)
-            sqlFP += "WHERE PandaID=:PandaID AND status=:status "
+            sqlFP += "WHERE PandaID=:PandaID AND status=:status AND fileType<>:type "
             # sql to update pending files
             sqlFU = "UPDATE {0} ".format(fileTableName)
             sqlFU += "SET status=:status,zipFileID=:zipFileID "
@@ -1277,8 +1410,8 @@ class DBProxy:
             # sql to check event
             sqlEC = "SELECT 1 FROM {0} WHERE PandaID=:PandaID AND eventRangeID=:eventRangeID ".format(eventTableName)
             # sql to check associated file
-            sqlEF = "SELECT status FROM {0} WHERE PandaID=:PandaID AND eventRangeID=:eventRangeID ".format(
-                fileTableName)
+            sqlEF = "SELECT status FROM {0} ".format(fileTableName)
+            sqlEF += "WHERE PandaID=:PandaID AND eventRangeID=:eventRangeID "
             # sql to insert event
             sqlEI = "INSERT INTO {0} ({1}) ".format(eventTableName, EventSpec.column_names())
             sqlEI += EventSpec.bind_values_expression()
@@ -1316,17 +1449,45 @@ class DBProxy:
                         resFC = self.cur.fetchone()
                         # insert file
                         if resFC is None:
-                            if jobSpec.zipPerMB is None or fileSpec.isZip == 0:
+                            if jobSpec.zipPerMB is None or fileSpec.isZip in [0, 1]:
                                 fileSpec.status = 'defined'
                                 jobSpec.hasOutFile = JobSpec.HO_hasOutput
                             else:
                                 fileSpec.status = 'pending'
                             varMap = fileSpec.values_list()
                             self.execute(sqlFI, varMap)
+                            fileSpec.fileID = self.cur.lastrowid
                             nFiles += 1
                             # mapping between event range ID and file ID
                             if fileSpec.eventRangeID is not None:
-                                fileIdMap[fileSpec.eventRangeID] = self.cur.lastrowid
+                                fileIdMap[fileSpec.eventRangeID] = fileSpec.fileID
+                            # associate to itself
+                            if fileSpec.isZip == 1:
+                                varMap = dict()
+                                varMap[':status'] = fileSpec.status
+                                varMap[':fileID'] = fileSpec.fileID
+                                varMap[':zipFileID'] = fileSpec.fileID
+                                self.execute(sqlFU, varMap)
+                        elif fileSpec.isZip == 1:
+                            # check file with eventRangeID
+                            varMap = dict()
+                            varMap[':PandaID'] = fileSpec.PandaID
+                            varMap[':lfn'] = fileSpec.lfn
+                            varMap[':eventRangeID'] = fileSpec.eventRangeID
+                            self.execute(sqlFE, varMap)
+                            resFE = self.cur.fetchone()
+                            if resFE is None:
+                                # associate to existing zip
+                                zipFileSpec = FileSpec()
+                                zipFileSpec.pack(resFC)
+                                fileSpec.status = 'zipped'
+                                fileSpec.zipFileID = zipFileSpec.fileID
+                                varMap = fileSpec.values_list()
+                                self.execute(sqlFI, varMap)
+                                nFiles += 1
+                                # mapping between event range ID and file ID
+                                if fileSpec.eventRangeID is not None:
+                                    fileIdMap[fileSpec.eventRangeID] = self.cur.lastrowid
                     if nFiles > 0:
                         tmpLog.debug('inserted {0} files'.format(nFiles))
                     # check pending files
@@ -1335,6 +1496,7 @@ class DBProxy:
                         varMap = dict()
                         varMap[':PandaID'] = jobSpec.PandaID
                         varMap[':status'] = 'pending'
+                        varMap[':type'] = 'input'
                         self.execute(sqlFP, varMap)
                         resFP = self.cur.fetchall()
                         tmpLog.debug('got {0} pending files'.format(len(resFP)))
@@ -1491,7 +1653,7 @@ class DBProxy:
             return False
 
     # get jobs with workerID
-    def get_jobs_with_worker_id(self, worker_id, locked_by, with_file=False):
+    def get_jobs_with_worker_id(self, worker_id, locked_by, with_file=False, only_running=False):
         try:
             # get logger
             tmpLog = core_utils.make_logger(_logger, 'workerID={0}'.format(worker_id))
@@ -1524,6 +1686,8 @@ class DBProxy:
                 # make job
                 jobSpec = JobSpec()
                 jobSpec.pack(resJ)
+                if only_running and jobSpec.subStatus not in ['running', 'submitted', 'queued']:
+                    continue
                 jobSpec.lockedBy = locked_by
                 # lock job
                 if locked_by is not None:
@@ -1541,7 +1705,7 @@ class DBProxy:
                     for resFile in resFileList:
                         fileSpec = FileSpec()
                         fileSpec.pack(resFile)
-                        jobSpec.add_out_file(fileSpec)
+                        jobSpec.add_file(fileSpec)
                 # append
                 jobChunkList.append(jobSpec)
             # commit
@@ -1618,7 +1782,7 @@ class DBProxy:
             return None
 
     # get jobs to trigger or check output transfer or zip output
-    def get_jobs_for_stage_out(self, max_jobs, interval_with_lock, interval_without_lock, locked_by,
+    def get_jobs_for_stage_out(self, max_jobs, interval_without_lock, interval_with_lock, locked_by,
                                sub_status, has_out_file_flag, bad_has_out_file_flag=None):
         try:
             # get logger
@@ -1629,10 +1793,11 @@ class DBProxy:
             sql = "SELECT {0} FROM {1} ".format(JobSpec.column_names(), jobTableName)
             sql += "WHERE (subStatus=:subStatus OR hasOutFile=:hasOutFile) "
             if bad_has_out_file_flag is not None:
-                sql += "AND hasOutFile<>:badHasOutFile "
+                sql += "AND (hasOutFile IS NULL OR hasOutFile<>:badHasOutFile) "
             sql += "AND (stagerTime IS NULL "
             sql += "OR (stagerTime<:lockTimeLimit AND stagerLock IS NOT NULL) "
-            sql += "OR stagerTime<:updateTimeLimit) "
+            sql += "OR (stagerTime<:updateTimeLimit AND stagerLock IS NULL) "
+            sql += ") "
             sql += "ORDER BY stagerTime "
             sql += "LIMIT {0} ".format(max_jobs)
             sql += "FOR UPDATE "
@@ -1641,13 +1806,16 @@ class DBProxy:
             sqlL += "WHERE PandaID=:PandaID "
             sqlL += "AND (stagerTime IS NULL "
             sqlL += "OR (stagerTime<:lockTimeLimit AND stagerLock IS NOT NULL) "
-            sqlL += "OR stagerTime<:updateTimeLimit) "
+            sqlL += "OR (stagerTime<:updateTimeLimit AND stagerLock IS NULL) "
+            sqlL += ") "
             # sql to get files
             sqlF = "SELECT {0} FROM {1} ".format(FileSpec.column_names(), fileTableName)
-            sqlF += "WHERE PandaID=:PandaID AND status=:status "
+            sqlF += "WHERE PandaID=:PandaID AND status=:status AND fileType<>:type "
             # sql to get associated files
             sqlAF = "SELECT {0} FROM {1} ".format(FileSpec.column_names(), fileTableName)
-            sqlAF += "WHERE PandaID=:PandaID AND zipFileID=:zipFileID "
+            sqlAF += "WHERE PandaID=:PandaID AND zipFileID=:zipFileID AND fileType<>:type "
+            # sql to increment attempt number
+            sqlFU = "UPDATE {0} SET attemptNr=attemptNr+1 WHERE fileID=:fileID ".format(fileTableName)
             # get jobs
             timeNow = datetime.datetime.utcnow()
             lockTimeLimit = timeNow - datetime.timedelta(seconds=interval_with_lock)
@@ -1681,6 +1849,7 @@ class DBProxy:
                     # get files
                     varMap = dict()
                     varMap[':PandaID'] = jobSpec.PandaID
+                    varMap[':type'] = 'input'
                     if has_out_file_flag == JobSpec.HO_hasOutput:
                         varMap[':status'] = 'defined'
                     elif has_out_file_flag == JobSpec.HO_hasZipOutput:
@@ -1692,7 +1861,12 @@ class DBProxy:
                     for resFile in resFileList:
                         fileSpec = FileSpec()
                         fileSpec.pack(resFile)
+                        fileSpec.attemptNr += 1
                         jobSpec.add_out_file(fileSpec)
+                        # increment attempt number
+                        varMap = dict()
+                        varMap[':fileID'] = fileSpec.fileID
+                        self.execute(sqlFU, varMap)
                     jobSpecList.append(jobSpec)
                     # get associated files
                     if has_out_file_flag == JobSpec.HO_hasZipOutput:
@@ -1700,12 +1874,16 @@ class DBProxy:
                             varMap = dict()
                             varMap[':PandaID'] = fileSpec.PandaID
                             varMap[':zipFileID'] = fileSpec.fileID
+                            varMap[':type'] = 'input'
                             self.execute(sqlAF, varMap)
                             resAFs = self.cur.fetchall()
                             for resAF in resAFs:
                                 assFileSpec = FileSpec()
                                 assFileSpec.pack(resAF)
                                 fileSpec.add_associated_file(assFileSpec)
+                    # get associated workers
+                    tmpWorkers = self.get_workers_with_job_id(jobSpec.PandaID, use_commit=False)
+                    jobSpec.add_workspec_list(tmpWorkers)
             # commit
             self.commit()
             tmpLog.debug('got {0} jobs'.format(len(jobSpecList)))
@@ -1745,10 +1923,10 @@ class DBProxy:
                     self.execute(sqlF, varMap)
                 # update event status
                 if update_event_status:
-                    eventRangeIDs = []
+                    eventRangeIDs = set()
                     if fileSpec.eventRangeID is not None:
-                        eventRangeIDs.append(fileSpec.eventRangeID)
-                    elif fileSpec.isZip == 1:
+                        eventRangeIDs.add(fileSpec.eventRangeID)
+                    if fileSpec.isZip == 1:
                         # get files associated with zip file
                         varMap = dict()
                         varMap[':PandaID'] = fileSpec.PandaID
@@ -1756,7 +1934,7 @@ class DBProxy:
                         self.execute(sqlAE, varMap)
                         resAE = self.cur.fetchall()
                         for eventRangeID, in resAE:
-                            eventRangeIDs.append(eventRangeID)
+                            eventRangeIDs.add(eventRangeID)
                     varMaps = []
                     for eventRangeID in eventRangeIDs:
                         varMap = dict()
@@ -1974,7 +2152,7 @@ class DBProxy:
             return False
 
     # get a cached info
-    def get_cache(self, main_key, sub_key):
+    def get_cache(self, main_key, sub_key=None):
         try:
             # get logger
             tmpLog = core_utils.make_logger(_logger, 'mainKey={0} subKey={1}'.format(main_key, sub_key))
@@ -2210,16 +2388,16 @@ class DBProxy:
             # get logger
             tmpLog = core_utils.make_logger(_logger)
             tmpLog.debug('start')
+            # sql to get nQueueLimit
+            sqlQ = "SELECT queueName,resourceType,nNewWorkers FROM {0} ".format(pandaQueueTableName)
+            sqlQ += "WHERE siteName=:siteName "
             # get nQueueLimit
-            sqlQ = "SELECT queueName,nNewWorkers FROM {0} WHERE siteName=:siteName ".format(pandaQueueTableName)
             varMap = dict()
             varMap[':siteName'] = site_name
             self.execute(sqlQ, varMap)
             resQ = self.cur.fetchall()
             retMap = dict()
-            for computingSite, nNewWorkers in resQ:
-                # extract resource type
-                resourceType = computingSite.split('/')[-1]
+            for computingSite, resourceType, nNewWorkers in resQ:
                 if resourceType not in retMap:
                     retMap[resourceType] = {
                         'running': 0,
@@ -2227,7 +2405,7 @@ class DBProxy:
                         'to_submit': nNewWorkers
                     }
             # get worker stats
-            sqlW = "SELECT wt.status,wt.computingSite,COUNT(*) cnt "
+            sqlW = "SELECT wt.status,wt.computingSite,pq.resourceType,COUNT(*) cnt "
             sqlW += "FROM {0} wt, {1} pq ".format(workTableName, pandaQueueTableName)
             sqlW += "WHERE pq.siteName=:siteName AND wt.computingSite=pq.queueName AND wt.status IN (:st1,:st2) "
             sqlW += "GROUP BY wt.status,wt.computingSite "
@@ -2238,9 +2416,7 @@ class DBProxy:
             varMap[':st2'] = 'submitted'
             self.execute(sqlW, varMap)
             resW = self.cur.fetchall()
-            for workerStatus, computingSite, cnt in resW:
-                # extract resource type
-                resourceType = computingSite.split('/')[-1]
+            for workerStatus, computingSite, resourceType, cnt in resW:
                 if resourceType not in retMap:
                     retMap[resourceType] = {
                         'running': 0,
@@ -2453,32 +2629,328 @@ class DBProxy:
             # return
             return False
 
-    # set nQueueLimit
+    # set queue limit
     def set_queue_limit(self, site_name, params):
         try:
             # get logger
             tmpLog = core_utils.make_logger(_logger, 'siteName={0}'.format(site_name))
             tmpLog.debug('start')
             # sql to set nQueueLimit
-            sqlQ = "UPDATE {0} SET nNewWorkers=:nQueue WHERE queueName=:queueName ".format(pandaQueueTableName)
+            sqlQ = "UPDATE {0} ".format(pandaQueueTableName)
+            sqlQ += "SET nNewWorkers=:nQueue WHERE siteName=:siteName AND resourceType=:resourceType "
+            # sql to get num of submitted workers
+            sqlC = "SELECT COUNT(*) cnt "
+            sqlC += "FROM {0} wt, {1} pq ".format(workTableName, pandaQueueTableName)
+            sqlC += "WHERE pq.siteName=:siteName AND wt.computingSite=pq.queueName AND wt.status=:status "
+            sqlC += "ANd pq.resourceType=:resourceType "
             # set all queues
             nUp = 0
-            for param, value in params.iteritems():
+            retMap = dict()
+            for resourceType, value in params.iteritems():
                 queueName = site_name
-                # pseudo queue name
-                if param is not None:
-                    queueName += "/{0}".format(param)
+                # get num of submitted workers
+                varMap = dict()
+                varMap[':siteName'] = site_name
+                varMap[':resourceType'] = resourceType
+                varMap[':status'] = 'submitted'
+                self.execute(sqlC, varMap)
+                res = self.cur.fetchone()
+                if res is not None:
+                    nSubmittedWorkers, = res
+                else:
+                    nSubmittedWorkers = 0
+                # set new value
+                value -= nSubmittedWorkers
+                if value < 0:
+                    value = 0
                 varMap = dict()
                 varMap[':nQueue'] = value
-                varMap[':queueName'] = queueName
+                varMap[':siteName'] = site_name
+                varMap[':resourceType'] = resourceType
                 self.execute(sqlQ, varMap)
                 iUp = self.cur.rowcount
+                if iUp > 0:
+                    retMap[resourceType] = value
                 nUp += iUp
                 tmpLog.debug('set nNewWorkers={0} to {1} with {2}'.format(value, queueName, iUp))
             # commit
             self.commit()
             tmpLog.debug('updated {0} queues'.format(nUp))
-            return nUp
+            return retMap
+        except:
+            # roll back
+            self.rollback()
+            # dump error
+            core_utils.dump_error_message(_logger)
+            # return
+            return {}
+
+    # get the number of missed worker
+    def get_num_missed_workers(self, queue_name, criteria):
+        try:
+            # get logger
+            tmpLog = core_utils.make_logger(_logger, "queue={0}".format(queue_name))
+            tmpLog.debug('start')
+            # get worker stats
+            sqlW = "SELECT COUNT(*) cnt "
+            sqlW += "FROM {0} wt, {1} pq ".format(workTableName, pandaQueueTableName)
+            sqlW += "WHERE wt.computingSite=pq.queueName AND wt.status=:status "
+            # get worker stats
+            varMap = dict()
+            for attr, val in criteria.iteritems():
+                if attr == 'timeLimit':
+                    sqlW += "AND wt.submitTime>:timeLimit "
+                    varMap[':timeLimit'] = val
+                elif attr in ['siteName']:
+                    sqlW += "AND pq.{0}=:{0} ".format(attr)
+                    varMap[':{0}'.format(attr)] = val
+                elif attr in ['computingSite', 'computingElement']:
+                    sqlW += "AND wt.{0}=:{0} ".format(attr)
+                    varMap[':{0}'.format(attr)] = val
+            varMap[':status'] = 'missed'
+            self.execute(sqlW, varMap)
+            resW = self.cur.fetchone()
+            if resW is None:
+                nMissed = 0
+            else:
+                nMissed, = resW
+            # commit
+            self.commit()
+            tmpLog.debug('got nMissed={0} for {1}'.format(nMissed, str(criteria)))
+            return nMissed
+        except:
+            # roll back
+            self.rollback()
+            # dump error
+            core_utils.dump_error_message(_logger)
+            # return
+            return 0
+
+    # get a worker
+    def get_workers_with_job_id(self, panda_id, use_commit=True):
+        try:
+            # get logger
+            tmpLog = core_utils.make_logger(_logger, 'pandaID={0}'.format(panda_id))
+            tmpLog.debug('start')
+            # sql to get workerIDs
+            sqlW = "SELECT workerID FROM {0} WHERE PandaID=:PandaID ".format(jobWorkerTableName)
+            # sql to get a worker
+            sqlG = "SELECT {0} FROM {1} ".format(WorkSpec.column_names(), workTableName)
+            sqlG += "WHERE workerID=:workerID "
+            # get workerIDs
+            varMap = dict()
+            varMap[':PandaID'] = panda_id
+            self.execute(sqlW, varMap)
+            retList = []
+            for worker_id, in self.cur.fetchall():
+                # get a worker
+                varMap = dict()
+                varMap[':workerID'] = worker_id
+                self.execute(sqlG, varMap)
+                res = self.cur.fetchone()
+                workSpec = WorkSpec()
+                workSpec.pack(res)
+                retList.append(workSpec)
+            # commit
+            if use_commit:
+                self.commit()
+            tmpLog.debug('got {0} workers'.format(len(retList)))
+            return retList
+        except:
+            # roll back
+            if use_commit:
+                self.rollback()
+            # dump error
+            core_utils.dump_error_message(_logger)
+            # return
+            return []
+
+    # delete old process locks
+    def clean_process_locks(self):
+        try:
+            # get logger
+            tmpLog = core_utils.make_logger(_logger)
+            tmpLog.debug('start')
+            # delete locks
+            sqlW = "DELETE FROM {0} ".format(processLockTableName)
+            # get worker stats
+            self.execute(sqlW)
+            resW = self.cur.fetchone()
+            # commit
+            self.commit()
+            tmpLog.debug('done')
+            return True
+        except:
+            # roll back
+            self.rollback()
+            # dump error
+            core_utils.dump_error_message(_logger)
+            # return
+            return False
+
+    # get a process lock
+    def get_process_lock(self, process_name, locked_by, lock_interval):
+        try:
+            # get logger
+            tmpLog = core_utils.make_logger(_logger, "proc={0} by={1}".format(process_name, locked_by))
+            tmpLog.debug('start')
+            # check lock
+            sqlC = "SELECT lockTime FROM {0} ".format(processLockTableName)
+            sqlC += "WHERE processName=:processName "
+            varMap = dict()
+            varMap[':processName'] = process_name
+            self.execute(sqlC, varMap)
+            resC = self.cur.fetchone()
+            retVal = False
+            timeNow = datetime.datetime.utcnow()
+            if resC is None:
+                # insert lock if missing
+                sqlI = "INSERT INTO {0} ({1}) ".format(processLockTableName, ProcessLockSpec.column_names())
+                sqlI += ProcessLockSpec.bind_values_expression()
+                processLockSpec = ProcessLockSpec()
+                processLockSpec.processName = process_name
+                processLockSpec.lockedBy = locked_by
+                processLockSpec.lockTime = timeNow
+                varMap = processLockSpec.values_list()
+                self.execute(sqlI, varMap)
+                retVal = True
+            else:
+                oldLockTime, = resC
+                timeLimit = timeNow - datetime.timedelta(seconds=lock_interval)
+                if oldLockTime <= timeLimit:
+                    # update lock if old
+                    sqlU = "UPDATE {0} SET lockedBy=:lockedBy,lockTime=:timeNow ".format(processLockTableName)
+                    sqlU += "WHERE processName=:processName AND lockTime<=:timeLimit "
+                    varMap = dict()
+                    varMap[':processName'] = process_name
+                    varMap[':lockedBy'] = locked_by
+                    varMap[':timeLimit'] = timeLimit
+                    varMap[':timeNow'] = timeNow
+                    self.execute(sqlU, varMap)
+                    if self.cur.rowcount > 0:
+                        retVal = True
+            # commit
+            self.commit()
+            tmpLog.debug('done with {0}'.format(retVal))
+            return retVal
+        except:
+            # roll back
+            self.rollback()
+            # dump error
+            core_utils.dump_error_message(_logger)
+            # return
+            return False
+
+    # get file status
+    def get_file_status(self, lfn, file_type, endpoint):
+        try:
+            # get logger
+            tmpLog = core_utils.make_logger(_logger, 'lfn={0} endpoint={1}'.format(lfn, endpoint))
+            tmpLog.debug('start')
+            # sql to get files
+            sqlF = "SELECT status, COUNT(*) cnt FROM {0} ".format(fileTableName)
+            sqlF += "WHERE lfn=:lfn AND fileType=:type "
+            if endpoint is not None:
+                sqlF += "AND endpoint=:endpoint "
+            sqlF += "GROUP BY status "
+            # get files
+            varMap = dict()
+            varMap[':lfn'] = lfn
+            varMap[':type'] = file_type
+            if endpoint is not None:
+                varMap[':endpoint'] = endpoint
+            self.execute(sqlF, varMap)
+            retMap = dict()
+            for status, cnt in self.cur.fetchall():
+                retMap[status] = cnt
+            # commit
+            self.commit()
+            tmpLog.debug('got {0}'.format(str(retMap)))
+            return retMap
+        except:
+            # roll back
+            self.rollback()
+            # dump error
+            core_utils.dump_error_message(_logger)
+            # return
+            return {}
+
+    # change file status
+    def change_file_status(self, panda_id, data, locked_by):
+        try:
+            # get logger
+            tmpLog = core_utils.make_logger(_logger, 'PandaID={0}'.format(panda_id))
+            tmpLog.debug('start lockedBy={0}'.format(locked_by))
+            # sql to check lock of job
+            sqlJ = "SELECT lockedBy FROM {0} ".format(jobTableName)
+            sqlJ += "WHERE PandaID=:PandaID FOR UPDATE "
+            # sql to update files
+            sqlF = "UPDATE {0} ".format(fileTableName)
+            sqlF += "SET status=:status WHERE fileID=:fileID "
+            # check lock
+            varMap = dict()
+            varMap[':PandaID'] = panda_id
+            self.execute(sqlJ, varMap)
+            resJ = self.cur.fetchone()
+            if resJ is None:
+                tmpLog.debug('skip since job not found')
+            else:
+                lockedBy, = resJ
+                if lockedBy != locked_by:
+                    tmpLog.debug('skip since lockedBy is inconsistent in DB {0}'.format(lockedBy))
+                else:
+                    # update files
+                    for tmpFileID, tmpLFN, newStatus in data:
+                        varMap = dict()
+                        varMap[':fileID'] = tmpFileID
+                        varMap[':status'] = newStatus
+                        self.execute(sqlF, varMap)
+                        tmpLog.debug('set new status {0} to {1}'.format(newStatus, tmpLFN))
+            # commit
+            self.commit()
+            tmpLog.debug('done')
+            return True
+        except:
+            # roll back
+            self.rollback()
+            # dump error
+            core_utils.dump_error_message(_logger)
+            # return
+            return False
+
+    # get group for a file
+    def get_group_for_file(self, lfn, file_type, endpoint):
+        try:
+            # get logger
+            tmpLog = core_utils.make_logger(_logger, 'lfn={0} endpoint={1}'.format(lfn, endpoint))
+            tmpLog.debug('start')
+            # sql to get group with the latest update
+            sqlF = "SELECT * FROM ("
+            sqlF += "SELECT groupID,groupStatus,groupUpdateTime FROM {0} ".format(fileTableName)
+            sqlF += "WHERE lfn=:lfn AND fileType=:type "
+            sqlF += "AND groupID IS NOT NULL AND groupStatus<>:ngStatus "
+            if endpoint is not None:
+                sqlF += "AND endpoint=:endpoint "
+            sqlF += "ORDER BY groupUpdateTime DESC "
+            sqlF += ") AS TMP LIMIT 1 "
+            # get group
+            varMap = dict()
+            varMap[':lfn'] = lfn
+            varMap[':type'] = file_type
+            varMap[':ngStatus'] = 'failed'
+            if endpoint is not None:
+                varMap[':endpoint'] = endpoint
+            self.execute(sqlF, varMap)
+            resF = self.cur.fetchone()
+            if resF is None:
+                retVal = None
+            else:
+                groupID, groupStatus, groupUpdateTime = resF
+                retVal = {'groupID': groupID, 'groupStatus': groupStatus, 'groupUpdateTime': groupUpdateTime}
+            # commit
+            self.commit()
+            tmpLog.debug('got {0}'.format(str(retVal)))
+            return retVal
         except:
             # roll back
             self.rollback()
@@ -2486,3 +2958,40 @@ class DBProxy:
             core_utils.dump_error_message(_logger)
             # return
             return None
+
+    # get file names and group status with a group ID
+    def get_files_with_group_id(self, group_id, file_type, endpoint):
+        try:
+            # get logger
+            tmpLog = core_utils.make_logger(_logger, 'groupID={0} endpoint={1}'.format(group_id, endpoint))
+            tmpLog.debug('start')
+            # sql to get files
+            sqlF = "SELECT lfn,groupStatus,groupUpdateTime FROM {0} ".format(fileTableName)
+            sqlF += "WHERE groupID=:groupID AND fileType=:type "
+            if endpoint is not None:
+                sqlF += "AND endpoint=:endpoint "
+            # get files
+            varMap = dict()
+            varMap[':groupID'] = group_id
+            varMap[':type'] = file_type
+            if endpoint is not None:
+                varMap[':endpoint'] = endpoint
+            self.execute(sqlF, varMap)
+            retMap = {'lfns': set(), 'groupStatus': None, 'groupUpdateTime': None}
+            for lfn, groupStatus, groupUpdateTime in self.cur.fetchall():
+                retMap['lfns'].add(lfn)
+                # use only the latest info
+                if retMap['groupUpdateTime'] is None or groupUpdateTime > retMap['groupUpdateTime']:
+                    retMap['groupStatus'] = groupStatus
+                    retMap['groupUpdateTime'] = groupUpdateTime
+            # commit
+            self.commit()
+            tmpLog.debug('got {0}'.format(str(retMap)))
+            return retMap
+        except:
+            # roll back
+            self.rollback()
+            # dump error
+            core_utils.dump_error_message(_logger)
+            # return
+            return {}

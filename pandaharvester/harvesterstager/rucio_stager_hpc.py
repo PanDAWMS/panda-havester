@@ -45,7 +45,8 @@ class RucioStagerHPC(PluginBase):
         zip_datasetName = 'harvester_stage_out.{0}'.format(str(uuid.uuid4()))
         fileAttrs = jobspec.get_output_file_attributes()
         for fileSpec in jobspec.outFiles:
-           # skip already done                                                                                                                                               
+            # skip already done
+            tmpLog.debug(' file: %s status: %s' % (fileSpec.lfn,fileSpec.status))                                                                                                                                             
             if fileSpec.status in ['finished', 'failed']:
                 continue
             # set destination RSE
@@ -75,48 +76,56 @@ class RucioStagerHPC(PluginBase):
 
             executable = ['/usr/bin/env',
                           'rucio', '-v', 'upload']
+            executable += [ '--no-register' ]
             executable += [ '--lifetime',('%d' %lifetime)]
             executable += [ '--rse',dstRSE]
             executable += [ '--scope',scope]
+            executable += [ '--guid',fileSpec.fileAttributes['guid']]
             executable += [('%s:%s' %(scope,datasetName))]
             executable += [('%s' %fileSpec.path)]
 
             #print executable 
 
             tmpLog.debug('rucio upload command: {0} '.format(executable))
-
+            
             process = subprocess.Popen(executable,
-                                       bufsize=-1,
                                        stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE)
+                                       stderr=subprocess.STDOUT)
 
-            while True:
-                time.sleep(0.1)
-                exit_code = process.poll()
-                if exit_code is not None:
-                    if exit_code == 0:
-                        fileSpec.status = 'finished'
-                    else:
-                        fileSpec.status = 'failed'
-                        ErrMsg = ErrMsg + (" %s " %fileSpec.lfn)
-                        allChecked = False                        
-                    break
-                else:
-                    continue
-
-            response = process.communicate()
-            #print response
-            if fileSpec.status == 'failed' : 
-                ErrMsg = ErrMsg + response[1].strip("\n")
-                tmpLog.debug(ErrMsg)
+            stdout,stderr = process.communicate()
+            
+            if process.returncode == 0:
+               fileSpec.status = 'finished'
+            else:
+               # check what failed
+               file_exists = False
+               rucio_sessions_limit_error = False
+               for line in stdout.split('\n'):
+                  if 'File name in specified scope already exists' in line:
+                     file_exists = True
+                     break
+                  elif 'exceeded simultaneous SESSIONS_PER_USER limit' in line:
+                     rucio_sessions_limit_error = True
+               if file_exists:
+                  tmpLog.debug('file exists, marking transfer as finished')
+                  fileSpec.status = 'finished'
+               elif rucio_sessions_limit_error:
+                  # do nothing
+                  tmpLog.warning('rucio returned error, will retry: stdout: %s' % stdout)
+                  # do not change fileSpec.status and Harvester will retry if this function returns False
+                  allChecked = False
+                  continue
+               else:
+                  fileSpec.status = 'failed'
+                  tmpLog.error('rucio upload failed with stdout: %s' % stdout)
+                  ErrMsg += '%s failed with rucio error stdout="%s"' % (fileSpec.lfn,stdout)
+                  allChecked = False
 
             # force update
             fileSpec.force_update('status')
 
-            tmpLog.debug('Result of rucio upload command: {0}'.format(fileSpec.status))
-
-            #        errMsg = core_utils.dump_error_message(tmpLog)
-
+            tmpLog.debug('file: %s status: %s' % (fileSpec.lfn,fileSpec.status))                                      
+            
         # return
         tmpLog.debug('done')
         if allChecked:
