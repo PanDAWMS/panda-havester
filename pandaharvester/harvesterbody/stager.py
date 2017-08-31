@@ -27,7 +27,7 @@ class Stager(AgentBase):
             mainLog.debug('try to get jobs to check')
             # get jobs to check preparation
             jobsToCheck = self.dbProxy.get_jobs_for_stage_out(harvester_config.stager.maxJobsToCheck,
-                                                              harvester_config.stager.triggerInterval,
+                                                              harvester_config.stager.checkInterval,
                                                               harvester_config.stager.lockInterval,
                                                               lockedBy, 'transferring',
                                                               JobSpec.HO_hasTransfer)
@@ -79,7 +79,7 @@ class Stager(AgentBase):
                     # not found
                     tmpLog.error('plugin for {0} not found'.format(jobSpec.computingSite))
                     continue
-                # trigger preparation
+                # trigger stage-out
                 tmpStat, tmpStr = stagerCore.trigger_stage_out(jobSpec)
                 # succeeded
                 if tmpStat is True:

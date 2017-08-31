@@ -17,6 +17,8 @@ class WorkSpec(SpecBase):
     ST_failed = 'failed'
     ST_ready = 'ready'
     ST_cancelled = 'cancelled'
+    ST_idle = 'idle'
+    ST_missed = 'missed'
 
     # list of worker statuses
     ST_LIST = [ST_submitted,
@@ -24,7 +26,9 @@ class WorkSpec(SpecBase):
                ST_finished,
                ST_failed,
                ST_ready,
-               ST_cancelled]
+               ST_cancelled,
+               ST_idle,
+               ST_missed]
 
     # type of mapping between job and worker
     MT_NoJob = 'NoJob'
@@ -65,7 +69,8 @@ class WorkSpec(SpecBase):
                            'minRamCount:integer',
                            'maxDiskCount:integer',
                            'maxWalltime:integer',
-                           'killTime:timestamp'
+                           'killTime:timestamp',
+                           'computingElement:text'
                            )
 
     # constructor
@@ -83,6 +88,10 @@ class WorkSpec(SpecBase):
             self.trigger_propagation()
             self.new_status = True
         self.status = value
+        if self.status == self.ST_running:
+            self.set_start_time()
+        elif self.is_final_status():
+            self.set_end_time()
 
     # get access point
     def get_access_point(self):
@@ -114,6 +123,9 @@ class WorkSpec(SpecBase):
         elif status in [self.ST_finished, self.ST_failed, self.ST_cancelled]:
             jobStatus = status
             jobSubStatus = 'to_transfer'
+        elif status in [self.ST_missed]:
+            jobStatus = 'failed'
+            jobSubStatus = status
         else:
             jobStatus = 'running'
             jobSubStatus = status
@@ -143,7 +155,7 @@ class WorkSpec(SpecBase):
 
     # final status
     def is_final_status(self):
-        return self.status in [self.ST_finished, self.ST_failed, self.ST_cancelled]
+        return self.status in [self.ST_finished, self.ST_failed, self.ST_cancelled, self.ST_missed]
 
     # convert to propagate
     def convert_to_propagate(self):
@@ -167,3 +179,13 @@ class WorkSpec(SpecBase):
         if self.pandaid_list is not None:
             data['pandaid_list'] = self.pandaid_list
         return data
+
+    # set start time
+    def set_start_time(self, force=False):
+        if self.startTime is None or force is True:
+            self.startTime = datetime.datetime.utcnow()
+
+    # set end time
+    def set_end_time(self, force=False):
+        if self.endTime is None or force is True:
+            self.endTime = datetime.datetime.utcnow()
