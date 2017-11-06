@@ -3,9 +3,12 @@
 # Setup for Harvester
 #
 #
-import panda_pkg_info
 import sys
+
 from setuptools import setup, find_packages
+
+from pandaharvester import panda_pkg_info
+
 sys.path.insert(0, '.')
 
 # get release version
@@ -23,12 +26,15 @@ setup(
     packages=find_packages(),
     install_requires=['requests',
                       'python-daemon',
+                      'future',
+                      'pycrypto'
                       ],
     data_files=[
         # config and cron files
         ('etc/panda', ['templates/panda_harvester.cfg.rpmnew.template',
                        'templates/logrotate.d/panda_harvester',
-                       'templates/panda_harvester-httpd.conf.rpmnew.template'
+                       'templates/panda_harvester-httpd.conf.rpmnew.template',
+                       'templates/panda_supervisord.cfg.rpmnew.template'
                        ]
          ),
         # sysconfig

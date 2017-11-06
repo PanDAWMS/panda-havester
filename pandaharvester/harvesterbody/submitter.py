@@ -1,4 +1,5 @@
 import datetime
+from future.utils import iteritems
 
 from pandaharvester.harvesterconfig import harvester_config
 from pandaharvester.harvestercore import core_utils
@@ -11,7 +12,7 @@ from pandaharvester.harvesterbody.worker_maker import WorkerMaker
 from pandaharvester.harvesterbody.worker_adjuster import WorkerAdjuster
 
 # logger
-_logger = core_utils.setup_logger()
+_logger = core_utils.setup_logger('submitter')
 
 
 # class to submit workers
@@ -30,7 +31,7 @@ class Submitter(AgentBase):
     def run(self):
         lockedBy = 'submitter-{0}'.format(self.ident)
         while True:
-            mainLog = core_utils.make_logger(_logger, 'id={0}'.format(lockedBy))
+            mainLog = core_utils.make_logger(_logger, 'id={0}'.format(lockedBy), method_name='run')
             mainLog.debug('getting queues to submit workers')
             # get queues associated to a site to submit workers
             curWorkers, siteName, resMap = self.dbProxy.get_queues_to_submit(harvester_config.submitter.nQueues,
@@ -43,7 +44,7 @@ class Submitter(AgentBase):
                 mainLog.debug('got {0} commands'.format(len(commandSpecs)))
                 for commandSpec in commandSpecs:
                     newLimits = self.dbProxy.set_queue_limit(siteName, commandSpec.params)
-                    for tmpResource, tmpNewVal in newLimits.iteritems():
+                    for tmpResource, tmpNewVal in iteritems(newLimits):
                         if tmpResource in resMap:
                             tmpQueueName = resMap[tmpResource]
                             if tmpQueueName in curWorkers:
@@ -59,8 +60,8 @@ class Submitter(AgentBase):
                 pass
             else:
                 # loop over all queues
-                for queueName, tmpVal in nWorkersPerQueue.iteritems():
-                    tmpLog = core_utils.make_logger(_logger, 'queue={0}'.format(queueName))
+                for queueName, tmpVal in iteritems(nWorkersPerQueue):
+                    tmpLog = core_utils.make_logger(_logger, 'queue={0}'.format(queueName), method_name='run')
                     tmpLog.debug('start')
                     nWorkers = tmpVal['nNewWorkers'] + tmpVal['nReady']
                     nReady = tmpVal['nReady']
@@ -131,6 +132,7 @@ class Submitter(AgentBase):
                             self.dbProxy.update_job(jobSpec, {'lockedBy': lockedBy,
                                                               'subStatus': 'prepared'})
                     # OK
+                    pandaIDs = set()
                     workSpecList = []
                     if len(okChunks) > 0:
                         for workSpec, okJobs in okChunks:
@@ -140,7 +142,14 @@ class Submitter(AgentBase):
                                 workSpec.hasJob = 0
                             else:
                                 workSpec.hasJob = 1
-                                workSpec.set_jobspec_list(okJobs)
+                                if workSpec.nJobsToReFill in [None, 0]:
+                                    workSpec.set_jobspec_list(okJobs)
+                                else:
+                                    # refill free slots during the worker is running
+                                    workSpec.set_jobspec_list(okJobs[:workSpec.nJobsToReFill])
+                                    workSpec.nJobsToReFill = None
+                                    for jobSpec in okJobs[workSpec.nJobsToReFill:]:
+                                        pandaIDs.add(jobSpec.PandaID)
                             # map type
                             workSpec.mapType = queueConfig.mapType
                             # queue name
@@ -171,13 +180,19 @@ class Submitter(AgentBase):
                         for workSpec in workSpecList:
                             if workSpec.hasJob == 1:
                                 tmpStat = messenger.feed_jobs(workSpec, workSpec.get_jobspec_list())
-                                tmpLog.debug('sent jobs to workerID={0} with {1}'.format(workSpec.workerID, tmpStat))
+                                if tmpStat is False:
+                                    tmpLog.error(
+                                        'failed to send jobs to workerID={0}'.format(workSpec.workerID))
+                                else:
+                                    tmpLog.debug(
+                                        'sent jobs to workerID={0} with {1}'.format(workSpec.workerID, tmpStat))
                         # submit
                         tmpLog.debug('submitting {0} workers'.format(len(workSpecList)))
                         workSpecList, tmpRetList, tmpStrList = self.submit_workers(submitterCore, workSpecList)
-                        pandaIDs = set()
                         for iWorker, (tmpRet, tmpStr) in enumerate(zip(tmpRetList, tmpStrList)):
                             workSpec, jobList = okChunks[iWorker]
+                            # use associated job list since it can be truncated for re-filling
+                            jobList = workSpec.get_jobspec_list()
                             # set status
                             if not tmpRet:
                                 # failed submission
@@ -218,8 +233,8 @@ class Submitter(AgentBase):
                                     tmpLog.error('failed to register a worker for PandaID={0} with batchID={1}'.format(
                                         jobSpec.PandaID,
                                         workSpec.batchID))
-                        # release jobs
-                        self.dbProxy.release_jobs(pandaIDs, lockedBy)
+                    # release jobs
+                    self.dbProxy.release_jobs(pandaIDs, lockedBy)
             mainLog.debug('done')
             # check if being terminated
             if self.terminated(harvester_config.submitter.sleepTime):

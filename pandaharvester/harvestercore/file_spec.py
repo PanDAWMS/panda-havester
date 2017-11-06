@@ -3,16 +3,16 @@ File spec class
 
 """
 
-from spec_base import SpecBase
+from .spec_base import SpecBase
 
 
 class FileSpec(SpecBase):
     # attributes
     attributesWithTypes = ('fileID:integer primary key autoincrement',
-                           'PandaID:integer',
+                           'PandaID:integer / index',
                            'taskID:integer',
-                           'lfn:text',
-                           'status:text',
+                           'lfn:text / index',
+                           'status:text / index',
                            'fsize:integer',
                            'chksum:text',
                            'path:text',
@@ -24,14 +24,17 @@ class FileSpec(SpecBase):
                            'zipFileID:integer',
                            'objstoreID:integer',
                            'endpoint:text',
-                           'groupID:text',
-                           'groupStatus:text',
-                           'groupUpdateTime:timestamp',
-                           'attemptNr:integer'
+                           'groupID:text / index',
+                           'groupStatus:text / index',
+                           'groupUpdateTime:timestamp / index',
+                           'attemptNr:integer',
+                           'todelete:integer / index',
+                           'scope:text'
                            )
 
     # attributes initialized with 0
     zeroAttrs = ('attemptNr',
+                 'todelete'
                  )
 
     # constructor

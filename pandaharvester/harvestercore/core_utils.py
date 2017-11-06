@@ -3,20 +3,39 @@ utilities
 
 """
 
+import os
 import sys
 import time
 import zlib
 import uuid
 import math
+import fcntl
+import base64
 import random
 import inspect
+import datetime
+import threading
 import traceback
+import Crypto.Random
+import Crypto.Hash.HMAC
+import Crypto.Cipher.AES
+from future.utils import iteritems
+from contextlib import contextmanager
 
-from work_spec import WorkSpec
-from file_spec import FileSpec
-from event_spec import EventSpec
+from .work_spec import WorkSpec
+from .file_spec import FileSpec
+from .event_spec import EventSpec
 from pandalogger.PandaLogger import PandaLogger
 from pandalogger.LogWrapper import LogWrapper
+
+
+with_memory_profile = False
+
+
+# enable memory profiling
+def enable_memory_profiling():
+    global with_memory_profile
+    with_memory_profile = True
 
 
 # setup logger
@@ -39,7 +58,7 @@ def make_logger(tmp_log, token=None, method_name=None):
         tmpStr += ' <{0}>'.format(token)
     else:
         tmpStr += ' :'.format(token)
-    newLog = LogWrapper(tmp_log, tmpStr)
+    newLog = LogWrapper(tmp_log, tmpStr, seeMem=with_memory_profile)
     return newLog
 
 
@@ -83,7 +102,7 @@ def make_pool_file_catalog(jobspec_list):
     doneLFNs = set()
     for jobSpec in jobspec_list:
         inFiles = jobSpec.get_input_file_attributes()
-        for inLFN, inFile in inFiles.iteritems():
+        for inLFN, inFile in iteritems(inFiles):
             if inLFN in doneLFNs:
                 continue
             doneLFNs.add(inLFN)
@@ -102,7 +121,7 @@ def make_pool_file_catalog(jobspec_list):
 def calc_adler32(file_name):
     val = 1
     blockSize = 32 * 1024 * 1024
-    with open(file_name) as fp:
+    with open(file_name, 'rb') as fp:
         while True:
             data = fp.read(blockSize)
             if not data:
@@ -115,6 +134,8 @@ def calc_adler32(file_name):
 
 # get output file report
 def get_output_file_report(jobspec):
+    if jobspec.outputFilesToReport is not None:
+        return jobspec.outputFilesToReport
     # header
     xml = """<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
     <!-- ATLAS file meta-data catalog -->
@@ -188,10 +209,15 @@ def update_job_attributes_with_workers(map_type, jobspec_list, workspec_list, fi
                         jobSpec.nCore = 1
                 except:
                     pass
+            # batch ID
+            if not jobSpec.has_attribute('batchID'):
+                if workSpec.batchID is not None:
+                    jobSpec.set_one_attribute('batchID', workSpec.batchID)
             # add files
+            outFileAttrs = jobSpec.get_output_file_attributes()
             for files_to_stage_out in files_to_stage_out_list:
                 if jobSpec.PandaID in files_to_stage_out:
-                    for lfn, fileAttersList in files_to_stage_out[jobSpec.PandaID].iteritems():
+                    for lfn, fileAttersList in iteritems(files_to_stage_out[jobSpec.PandaID]):
                         for fileAtters in fileAttersList:
                             fileSpec = FileSpec()
                             fileSpec.lfn = lfn
@@ -207,6 +233,8 @@ def update_job_attributes_with_workers(map_type, jobspec_list, workspec_list, fi
                                 fileSpec.chksum = fileAtters['chksum']
                             if 'eventRangeID' in fileAtters:
                                 fileSpec.eventRangeID = fileAtters['eventRangeID']
+                            if lfn in outFileAttrs:
+                                fileSpec.scope = outFileAttrs[lfn]['scope']
                             jobSpec.add_out_file(fileSpec)
             # add events
             for events_to_update in events_to_update_list:
@@ -265,9 +293,10 @@ def update_job_attributes_with_workers(map_type, jobspec_list, workspec_list, fi
         # FIXME
         # jobSpec.set_attributes(workAttributes)
         # add files
+        outFileAttrs = jobSpec.get_output_file_attributes()
         for files_to_stage_out in files_to_stage_out_list:
             if jobSpec.PandaID in files_to_stage_out:
-                for lfn, fileAttersList in files_to_stage_out[jobSpec.PandaID].iteritems():
+                for lfn, fileAttersList in iteritems(files_to_stage_out[jobSpec.PandaID]):
                     for fileAtters in fileAttersList:
                         fileSpec = FileSpec()
                         fileSpec.lfn = lfn
@@ -283,6 +312,8 @@ def update_job_attributes_with_workers(map_type, jobspec_list, workspec_list, fi
                             fileSpec.chksum = fileAtters['chksum']
                         if 'eventRangeID' in fileAtters:
                             fileSpec.eventRangeID = fileAtters['eventRangeID']
+                        if lfn in outFileAttrs:
+                            fileSpec.scope = outFileAttrs[lfn]['scope']
                         jobSpec.add_out_file(fileSpec)
         # add events
         for events_to_update in events_to_update_list:
@@ -306,3 +337,128 @@ def update_job_attributes_with_workers(map_type, jobspec_list, workspec_list, fi
             else:
                 jobSpec.status, jobSpec.subStatus = workSpec.convert_to_job_status(WorkSpec.ST_submitted)
     return True
+
+
+# rollover for log files
+def do_log_rollover():
+    PandaLogger.doRollOver()
+
+
+# stopwatch class
+class StopWatch(object):
+    # constructor
+    def __init__(self):
+        self.startTime = datetime.datetime.utcnow()
+
+    # get elapsed time
+    def get_elapsed_time(self):
+        diff = datetime.datetime.utcnow() - self.startTime
+        return " : took {0}.{0} sec".format(diff.seconds + diff.days * 24 * 3600,
+                                            diff.microseconds/1000)
+
+    # reset
+    def reset(self):
+        self.startTime = datetime.datetime.utcnow()
+
+
+# get stopwatch
+def get_stopwatch():
+    return StopWatch()
+
+
+# map with lock
+class MapWithLock:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.dataMap = dict()
+
+    def __getitem__(self, item):
+        ret = self.dataMap.__getitem__(item)
+        return ret
+
+    def __setitem__(self, item, value):
+        self.dataMap.__setitem__(item, value)
+
+    def __contains__(self, item):
+        ret = self.dataMap.__contains__(item)
+        return ret
+
+    def acquire(self):
+        self.lock.acquire()
+
+    def release(self):
+        self.lock.release()
+
+    def iteritems(self):
+        return iteritems(self.dataMap)
+
+
+# global dict for all threads
+global_dict = MapWithLock()
+
+
+# get global dict
+def get_global_dict():
+    return global_dict
+
+
+# get file lock
+@contextmanager
+def get_file_lock(file_name, lock_interval):
+    if os.path.exists(file_name):
+        opt = 'r+'
+    else:
+        opt = 'w+'
+    with open(file_name, opt) as f:
+        locked = False
+        try:
+            # lock file
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            locked = True
+            # read timestamp
+            timeNow = datetime.datetime.utcnow()
+            toSkip = False
+            try:
+                s = f.read()
+                pTime = datetime.datetime.strptime(s, "%Y-%m-%d %H:%M:%S.%f")
+                if timeNow - pTime < datetime.timedelta(seconds=lock_interval):
+                    toSkip = True
+            except:
+                pass
+            # skip if still in locked interval
+            if toSkip:
+                raise IOError("skipped since still in locked interval")
+            # write timestamp
+            f.seek(0)
+            f.write(timeNow.strftime("%Y-%m-%d %H:%M:%S.%f"))
+            f.truncate()
+            # execute with block
+            yield
+        finally:
+            # unlock
+            if locked:
+                fcntl.flock(f, fcntl.LOCK_UN)
+
+
+# convert a key phrase to a cipher key
+def convert_phrase_to_key(key_phrase):
+    h = Crypto.Hash.HMAC.new(key_phrase)
+    return h.hexdigest()
+
+
+# encrypt a string
+def encrypt_string(key_phrase, plain_text):
+    k = convert_phrase_to_key(key_phrase)
+    v = Crypto.Random.new().read(Crypto.Cipher.AES.block_size)
+    c = Crypto.Cipher.AES.new(k, Crypto.Cipher.AES.MODE_CFB, v)
+    return base64.b64encode(v + c.encrypt(plain_text))
+
+
+# decrypt a string
+def decrypt_string(key_phrase, cipher_text):
+    cipher_text = base64.b64decode(cipher_text)
+    k = convert_phrase_to_key(key_phrase)
+    v = cipher_text[:Crypto.Cipher.AES.block_size]
+    c = Crypto.Cipher.AES.new(k, Crypto.Cipher.AES.MODE_CFB, v)
+    cipher_text = cipher_text[Crypto.Cipher.AES.block_size:]
+    return c.decrypt(cipher_text)
