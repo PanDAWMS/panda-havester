@@ -32,17 +32,6 @@ class APFGridSubmitter(PluginBase):
         okread = cp.read(factoryconffile)
         self.log.debug('Successfully read %s' % okread)       
 
-        # Setup factory mock object. 
-        from autopyfactory.factory import Factory
-        if APFGridSubmitter.factorymock is None:
-            APFGridSubmitter.factorymock = Factory.getFactoryMock(fcl=cp)
-        
-        # Setup AGIS
-        if APFGridSubmitter.agis is None:
-            APFGridSubmitter.agisobj = Agis(None, cp, None)
-        self.agisobj = APFGridSubmitter.agisobj
-        self.log.debug("AGIS object: %s" % self.agisobj)
-        
         # Setup Authmanager
         authconfigfile = os.path.expanduser(cp.get('Factory','authConf'))
         ac = Config()
@@ -52,7 +41,21 @@ class APFGridSubmitter(PluginBase):
         if APFGridSubmitter.authman is None :
             APFGridSubmitter.authman = AuthManager(ac)
         self.authman = APFGridSubmitter.authman           
-        APFGridSubmitter.authman.startHandlers()        
+        APFGridSubmitter.authman.startHandlers() 
+
+
+        # Setup factory mock object. 
+        from autopyfactory.factory import Factory
+        if APFGridSubmitter.factorymock is None:
+            APFGridSubmitter.factorymock = Factory.getFactoryMock(fcl=cp, am=self.authman)
+        
+        # Setup AGIS
+        if APFGridSubmitter.agis is None:
+            APFGridSubmitter.agisobj = Agis(None, cp, None)
+        self.agisobj = APFGridSubmitter.agisobj
+        self.log.debug("AGIS object: %s" % self.agisobj)
+        
+      
         
         # Setup logserver
         
