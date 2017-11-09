@@ -42,7 +42,7 @@ class APFGridSubmitter(PluginBase):
             APFGridSubmitter.authman = AuthManager()
             APFGridSubmitter.authman.reconfig(ac)
         self.authman = APFGridSubmitter.authman           
-        APFGridSubmitter.authman.startHandlers() 
+        APFGridSubmitter.authman.activate()
 
 
         # Setup factory mock object. 
