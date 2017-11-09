@@ -39,7 +39,8 @@ class APFGridSubmitter(PluginBase):
         okread = ac.read(authconfigfile)
         self.log.debug('Successfully read %s' % okread) 
         if APFGridSubmitter.authman is None :
-            APFGridSubmitter.authman = AuthManager(ac)
+            APFGridSubmitter.authman = AuthManager()
+            APFGridSubmitter.authman.reconfig(ac)
         self.authman = APFGridSubmitter.authman           
         APFGridSubmitter.authman.startHandlers() 
 
