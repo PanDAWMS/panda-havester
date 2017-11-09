@@ -63,7 +63,7 @@ def make_logger(tmp_log, token=None, method_name=None):
 
 
 # dump error message
-def dump_error_message(tmp_log, err_str=None):
+def dump_error_message(tmp_log, err_str=None, no_message=False):
     if not isinstance(tmp_log, LogWrapper):
         methodName = '{0} : '.format(inspect.stack()[1][3])
     else:
@@ -73,7 +73,8 @@ def dump_error_message(tmp_log, err_str=None):
         errtype, errvalue = sys.exc_info()[:2]
         err_str = "{0} {1} {2} ".format(methodName, errtype.__name__, errvalue)
         err_str += traceback.format_exc()
-    tmp_log.error(err_str)
+    if not no_message:
+        tmp_log.error(err_str)
     return err_str
 
 
@@ -462,3 +463,22 @@ def decrypt_string(key_phrase, cipher_text):
     c = Crypto.Cipher.AES.new(k, Crypto.Cipher.AES.MODE_CFB, v)
     cipher_text = cipher_text[Crypto.Cipher.AES.block_size:]
     return c.decrypt(cipher_text)
+
+
+# set permission
+def set_file_permission(path):
+    if not os.path.exists(path):
+        return
+    targets = []
+    if os.path.isfile(path):
+        targets += [path]
+    else:
+        for root, dirs, files in os.walk(path):
+            targets += [os.path.join(root, f) for f in files]
+    umask = os.umask(0)
+    uid = os.getuid()
+    gid = os.getgid()
+    for f in targets:
+        os.chmod(f, 0o666 - umask)
+        os.chown(f, uid, gid)
+    os.umask(umask)
