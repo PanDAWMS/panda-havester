@@ -256,10 +256,9 @@ def main(daemon_mode=True):
                 for handler in loggerObj.handlers:
                     if hasattr(handler, 'stream'):
                         files_preserve.append(handler.stream)
-        sys.stderr = StdErrWrapper()
         # make daemon context
         dc = daemon.DaemonContext(stdout=sys.stdout,
-                                  stderr=sys.stderr,
+                                  stderr=StdErrWrapper(),
                                   uid=uid,
                                   gid=gid,
                                   umask=umask,
