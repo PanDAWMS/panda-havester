@@ -11,6 +11,8 @@ from autopyfactory.plugins.factory.config.queues.Agis import Agis
 from autopyfactory.configloader import Config
 from autopyfactory.queueslib import SubmitAPFQueue 
 from autopyfactory.authmanager import AuthManager
+from autopyfactory.logserver import LogServer
+
 # setup base logger
 baseLogger = core_utils.setup_logger()
 
@@ -26,10 +28,10 @@ class APFGridSubmitter(PluginBase):
         PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
         
-        cp = Config()
+        self.config = Config()
         factoryconffile = os.path.expanduser('~/harvester/etc/autopyfactory/autopyfactory.conf')
         self.log.debug('Reading config: %s' % factoryconffile)
-        okread = cp.read(factoryconffile)
+        okread = self.config.read(factoryconffile)
         self.log.debug('Successfully read %s' % okread)       
 
         # Setup Authmanager
@@ -44,7 +46,6 @@ class APFGridSubmitter(PluginBase):
         self.authman = APFGridSubmitter.authman           
         APFGridSubmitter.authman.activate()
 
-
         # Setup factory mock object. 
         from autopyfactory.factory import Factory
         if APFGridSubmitter.factorymock is None:
@@ -56,15 +57,16 @@ class APFGridSubmitter(PluginBase):
         self.agisobj = APFGridSubmitter.agisobj
         self.log.debug("AGIS object: %s" % self.agisobj)
         
-      
-        
         # Setup logserver
-        
-        
-        
-        # Setup cleanlogs
-        
-        
+        self.log.debug("Handling LogServer...")
+        if self.config.generic_get('Factory', 'logserver.enabled', 'getboolean'):
+            self.log.info("LogServer enabled. Initializing...")
+            self.logserver = LogServer(self.config)
+            self.log.info('LogServer initialized. Starting...')
+            self.logserver.start()
+            self.log.debug('LogServer thread started.')
+        else:
+            self.log.info('LogServer disabled. Not running.')
                 
         self.log.debug('APFGridSubmitter initialized.')       
 
@@ -77,7 +79,7 @@ class APFGridSubmitter(PluginBase):
                 s+="%s = %s\n" % (opt, config.get(section, opt))
         return s
 
-    # submit workers
+
     def submit_workers(self, workspec_list):
         '''
         Submit workers to a scheduling system like batch systems and computing elements.
@@ -126,7 +128,7 @@ class APFGridSubmitter(PluginBase):
             section = None        
             for s in qc.sections():
                 qcq = qc.get(s, 'wmsqueue').strip()
-                #self.log.debug('Checking %s' % qcq)
+                self.log.debug('Checking %s' % qcq)
                 if qcq == pq:
                     found = True
                     section = s
