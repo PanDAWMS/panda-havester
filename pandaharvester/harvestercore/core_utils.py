@@ -354,8 +354,8 @@ class StopWatch(object):
     # get elapsed time
     def get_elapsed_time(self):
         diff = datetime.datetime.utcnow() - self.startTime
-        return " : took {0}.{0} sec".format(diff.seconds + diff.days * 24 * 3600,
-                                            diff.microseconds/1000)
+        return " : took {0}.{1:03} sec".format(diff.seconds + diff.days * 24 * 3600,
+                                               diff.microseconds/1000)
 
     # reset
     def reset(self):
@@ -479,6 +479,17 @@ def set_file_permission(path):
     uid = os.getuid()
     gid = os.getgid()
     for f in targets:
-        os.chmod(f, 0o666 - umask)
-        os.chown(f, uid, gid)
+        try:
+            os.chmod(f, 0o666 - umask)
+            os.chown(f, uid, gid)
+        except:
+            pass
     os.umask(umask)
+
+
+# get URL of queues config file
+def get_queues_config_url():
+    try:
+        return os.environ['HARVESTER_QUEUE_CONFIG_URL']
+    except:
+        return None

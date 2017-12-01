@@ -1,7 +1,8 @@
 import uuid
 import os
-import multiprocessing
 import subprocess
+
+from concurrent.futures import ProcessPoolExecutor as Pool
 
 from pandaharvester.harvestercore import core_utils
 from pandaharvester.harvestercore.plugin_base import PluginBase
@@ -34,7 +35,7 @@ def submit_a_worker(workspec):
     f.write(WorkSpec.ST_submitted)
     f.close()
     # fake submission
-    p = subprocess.Popen(['sleep', '30'],
+    p = subprocess.Popen(['sleep', '3'],
                          stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE)
     stdoutStr, stderrStr = p.communicate()
@@ -45,19 +46,23 @@ def submit_a_worker(workspec):
 class DummyMcoreSubmitter(PluginBase):
     # constructor
     def __init__(self, **kwarg):
+        self.logBaseURL = 'http://localhost/test'
         PluginBase.__init__(self, **kwarg)
 
     # submit workers with multiple cores
     def submit_workers(self, workspec_list):
         tmpLog = core_utils.make_logger(baseLogger, method_name='submit_workers')
         tmpLog.debug('start nWorkers={0}'.format(len(workspec_list)))
-        pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
-        retValList = pool.map(submit_a_worker, workspec_list)
+        with Pool() as pool:
+            retValList = pool.map(submit_a_worker, workspec_list)
         # propagate changed attributes
         retList = []
         for workSpec, tmpVal in zip(workspec_list, retValList):
             retVal, tmpDict = tmpVal
             workSpec.set_attributes_with_dict(tmpDict)
+            workSpec.set_log_file('batch_log', '{0}/{1}.log'.format(self.logBaseURL, workSpec.batchID))
+            workSpec.set_log_file('stdout', '{0}/{1}.out'.format(self.logBaseURL, workSpec.batchID))
+            workSpec.set_log_file('stderr', '{0}/{1}.err'.format(self.logBaseURL, workSpec.batchID))
             retList.append(retVal)
         tmpLog.debug('done')
         return retList
