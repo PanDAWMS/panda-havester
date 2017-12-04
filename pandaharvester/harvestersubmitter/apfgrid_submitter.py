@@ -50,11 +50,11 @@ class APFGridSubmitter(PluginBase):
         # Setup factory mock object. 
         from autopyfactory.factory import Factory
         if APFGridSubmitter.factorymock is None:
-            APFGridSubmitter.factorymock = Factory.getFactoryMock(fcl=cp, am=self.authman)
+            APFGridSubmitter.factorymock = Factory.getFactoryMock(fcl=self.config, am=self.authman)
         
         # Setup AGIS
         if APFGridSubmitter.agis is None:
-            APFGridSubmitter.agisobj = Agis(None, cp, None)
+            APFGridSubmitter.agisobj = Agis(None, self.config, None)
         self.agisobj = APFGridSubmitter.agisobj
         self.log.debug("AGIS object: %s" % self.agisobj)
         
