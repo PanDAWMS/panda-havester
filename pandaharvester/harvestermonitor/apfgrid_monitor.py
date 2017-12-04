@@ -54,10 +54,10 @@ class APFGridMonitor(PluginBase):
     def _updateJobInfo(self):
         self.log.debug("Getting job info from Condor...")
         #out = condorlib._querycondorlib(['match_apf_queue', 'jobstatus', 'workerid'])
-        out = condorlib.queryjobs(['match_apf_queue', 'jobstatus', 'workerid'])
+        out = condorlib.condor_q(['match_apf_queue', 'jobstatus', 'workerid'])
         self.log.debug("Got jobinfo %s" % out)
         self.jobinfo = out
-        out = condorlib.condorhistorylib(attributes = ['workerid'], constraints=[])
+        out = condorlib.condor_history(attributes = ['workerid'], constraints=[])
         self.log.debug("Got history info %s" % out)
         self.historyinfo = out
 
