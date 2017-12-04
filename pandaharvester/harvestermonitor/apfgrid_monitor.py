@@ -1,5 +1,6 @@
 import logging
 import sys
+import traceback
 
 from pandaharvester.harvestercore import core_utils
 from pandaharvester.harvestercore.work_spec import WorkSpec
@@ -87,14 +88,19 @@ class APFGridMonitor(PluginBase):
             found = False
             
             alljobs = self.jobinfo + self.historyinfo
+            self.log.debug("%d jobs" % len(alljobs))
             
             for jobad in alljobs:
-                if jobad['workerid'] == workSpec.workerID:
-                    self.log.debug("Found matching job: ID %s" % jobad['workerid'])
-                    found = True
-                    jobstatus = int(jobad['jobstatus'])
-                    retlist.append((APFGridMonitor.STATUS_MAP[jobstatus], ''))
+                try:    
+                    if jobad['workerid'] == workSpec.workerID:
+                        self.log.debug("Found matching job: ID %s" % jobad['workerid'])
+                        found = True
+                        jobstatus = int(jobad['jobstatus'])
+                        retlist.append((APFGridMonitor.STATUS_MAP[jobstatus], ''))
+                except Exception, e:
+                    self.log.error(traceback.format_exc(None))
             if not found:
+                self.log.error("No corresponding job for workspec %s" % workSpec)
                 retlist.append((WorkSpec.ST_cancelled, ''))
         self.log.debug('retlist=%s' % retlist)
         return True, retlist
