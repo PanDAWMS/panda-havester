@@ -35,7 +35,8 @@ class APFGridSubmitter(PluginBase):
         self.log.debug('Successfully read %s' % okread)       
 
         # Setup Authmanager
-        authconfigfile = os.path.expanduser(cp.get('Factory','authConf'))
+        authconfigfile = os.path.expanduser(self.config.get('Factory','authConf'))
+        
         ac = Config()
         self.log.debug('Reading config: %s' % authconfigfile)
         okread = ac.read(authconfigfile)
