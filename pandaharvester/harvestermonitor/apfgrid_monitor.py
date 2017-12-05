@@ -95,7 +95,11 @@ class APFGridMonitor(PluginBase):
                     if jobad['workerid'] == workSpec.workerID:
                         self.log.debug("Found matching job: ID %s" % jobad['workerid'])
                         found = True
-                        jobstatus = int(jobad['jobstatus'])
+                        try:
+                            jobstatus = int(jobad['JobStatus'])
+                        except:
+                            self.log.error(traceback.format_exc(None))
+                            jobstatus = int(jobad['jobstatus'])
                         retlist.append((APFGridMonitor.STATUS_MAP[jobstatus], ''))
                 except Exception, e:
                     self.log.error(traceback.format_exc(None))
