@@ -111,58 +111,63 @@ class APFGridSubmitter(PluginBase):
         # } 
         wsmap = {}
         jobmap = {}
-        for workSpec in workspec_list:
-            self.log.debug("Worker(workerId=%s queueName=%s computingSite=%s nCore=%s status=%s " % (workSpec.workerID, 
-                                                                               workSpec.queueName,
-                                                                               workSpec.computingSite,
-                                                                               workSpec.nCore, 
-                                                                               workSpec.status) )
-            try:
-                wslist = wsmap[workSpec.computingSite]
-                wslist.append(workSpec)
-            except KeyError:
-                wsmap[workSpec.computingSite] = [workSpec] 
-            self.log.debug("wsmap = %s" % wsmap)
-        
-        for pq in wsmap.keys():
-            found = False
-            section = None        
-            for s in qc.sections():
-                qcq = qc.get(s, 'wmsqueue').strip()
-                self.log.debug('Checking %s' % qcq)
-                if qcq == pq:
-                    found = True
-                    section = s
-                    self.log.debug("Found queues config for %s" % pq)
-            if found:
-                # make apfq and submit
-                self.log.debug("Agis config found for PQ")
-                pqc = qc.getSection(section)
-                ac = os.path.expanduser('~/harvester/etc/autopyfactory/autopyfactory.conf')
-                pqc.set(section, 'factoryconf', ac) 
-                self.log.debug("Section config= %s" % pqc)
-                self.log.debug("Making APF queue for PQ %s with label %s"% (pq, section))
-                apfq = SubmitAPFQueue( pqc, self.authman )
-                self.log.debug("Successfully made APFQueue")
-                joblist = []
-                for ws in wsmap[pq]:
-                    jobentry = { "+workerid" : ws.workerID }
-                    joblist.append(jobentry)
-                self.log.debug("joblist made= %s. Submitting..." % joblist)
-                jobinfo = apfq.submitlist(joblist)
-                self.log.debug("Got jobinfo %s" % jobinfo)
-                
-                wslist = wsmap[pq]
-                self.log.debug("wslist for pq %s is length %s" % (pq, len(wslist)))
-                for i in range(0, len(wslist)):
-                    self.log.debug("Setting ws.batchID to %s" % jobinfo[i].jobid )
-                    wslist[i].batchID = jobinfo[i].jobid
-                    wslist[i].set_status(WorkSpec.ST_submitted)
-                    retlist.append((True, ''))
-                
-                
-            else:
-                self.log.info('No AGIS config found for PQ %s skipping.' % pq)        
+        try:
+            self.log.debug("Handling workspec_list with %d items..." % len(workspec_list))
+            for workSpec in workspec_list:
+                self.log.debug("Worker(workerId=%s queueName=%s computingSite=%s nCore=%s status=%s " % (workSpec.workerID, 
+                                                                                   workSpec.queueName,
+                                                                                   workSpec.computingSite,
+                                                                                   workSpec.nCore, 
+                                                                                   workSpec.status) )
+                try:
+                    wslist = wsmap[workSpec.computingSite]
+                    wslist.append(workSpec)
+                except KeyError:
+                    wsmap[workSpec.computingSite] = [workSpec] 
+                self.log.debug("wsmap = %s" % wsmap)
+            
+            for pq in wsmap.keys():
+                found = False
+                section = None        
+                for s in qc.sections():
+                    qcq = qc.get(s, 'wmsqueue').strip()
+                    self.log.debug('Checking %s' % qcq)
+                    if qcq == pq:
+                        found = True
+                        section = s
+                        self.log.debug("Found queues config for %s" % pq)
+                if found:
+                    # make apfq and submit
+                    self.log.debug("Agis config found for PQ")
+                    pqc = qc.getSection(section)
+                    ac = os.path.expanduser('~/harvester/etc/autopyfactory/autopyfactory.conf')
+                    pqc.set(section, 'factoryconf', ac) 
+                    self.log.debug("Section config= %s" % pqc)
+                    self.log.debug("Making APF queue for PQ %s with label %s"% (pq, section))
+                    apfq = SubmitAPFQueue( pqc, self.authman )
+                    self.log.debug("Successfully made APFQueue")
+                    joblist = []
+                    for ws in wsmap[pq]:
+                        jobentry = { "+workerid" : ws.workerID }
+                        joblist.append(jobentry)
+                    self.log.debug("joblist made= %s. Submitting..." % joblist)
+                    jobinfo = apfq.submitlist(joblist)
+                    self.log.debug("Got jobinfo %s" % jobinfo)
+                    
+                    wslist = wsmap[pq]
+                    self.log.debug("wslist for pq %s is length %s" % (pq, len(wslist)))
+                    for i in range(0, len(wslist)):
+                        self.log.debug("Setting ws.batchID to %s" % jobinfo[i].jobid )
+                        wslist[i].batchID = jobinfo[i].jobid
+                        wslist[i].set_status(WorkSpec.ST_submitted)
+                        retlist.append((True, ''))
+                    
+                    
+                else:
+                    self.log.info('No AGIS config found for PQ %s skipping.' % pq)        
+
+        except Exception, e:
+            self.log.error(traceback.format_exc(None))
 
         self.log.debug("return list=%s " % retlist)
         return retlist

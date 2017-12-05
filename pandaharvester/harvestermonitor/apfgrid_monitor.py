@@ -91,7 +91,9 @@ class APFGridMonitor(PluginBase):
             self.log.debug("%d jobs" % len(alljobs))
             
             for jobad in alljobs:
-                try:    
+                try:
+                    for item in jobad.keys():
+                        self.log.debug("%s = %s" % (item, jobad[item]))    
                     if jobad['workerid'] == workSpec.workerID:
                         self.log.debug("Found matching job: ID %s" % jobad['workerid'])
                         found = True
