@@ -103,7 +103,7 @@ class APFGridMonitor(PluginBase):
                                                                                workSpec.computingSite, 
                                                                                workSpec.status) )
             try:
-                jobad = self.allbyworkerid(workSpec.workerID)
+                jobad = self.allbyworkerid[workSpec.workerID]
                 self.log.debug("Found matching job: ID %s" % jobad['workerid'])
                 jobstatus = int(jobad['jobstatus'])
                 retlist.append((APFGridMonitor.STATUS_MAP[jobstatus], ''))
