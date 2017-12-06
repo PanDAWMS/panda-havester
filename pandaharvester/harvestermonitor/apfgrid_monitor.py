@@ -71,7 +71,7 @@ class APFGridMonitor(PluginBase):
         alljobs = self.jobinfo + self.historyinfo
         for jobad in alljobs:
             try:
-                workerid = jobad[workerid]
+                workerid = jobad['workerid']
                 self.allbyworkerid[workerid]= jobad      
             except KeyError:
                 # some non-harvester jobs may not have workerids, ignore them
