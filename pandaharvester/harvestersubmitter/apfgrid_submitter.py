@@ -1,6 +1,7 @@
 
 import logging
 import os
+import random
 import sys
 
 from pandaharvester.harvestercore import core_utils
@@ -131,18 +132,22 @@ class APFGridSubmitter(PluginBase):
                 self.log.debug("wsmap = %s" % wsmap)
             
             for pq in wsmap.keys():
-                found = False
-                section = None        
+                found = False        
+                apfqsections = []
+                
                 for s in qc.sections():
                     qcq = qc.get(s, 'wmsqueue').strip()
                     self.log.debug('Checking %s' % qcq)
                     if qcq == pq:
                         found = True
-                        section = s
-                        self.log.debug("Found queues config for %s" % pq)
+                        apfqsections.append(s)
+                        self.log.debug("Found a queues config for %s" % pq )
+                        
+                self.log.info("Found %d sections for PQ %s" % (len(apfqsections), pq))
                 if found:
                     # make apfq and submit
-                    self.log.debug("Agis config found for PQ")
+                    self.log.debug("One or more Agis configs found for PQ. Choosing one...")
+                    section = random.choice(apfqsections)
                     pqc = qc.getSection(section)
                     ac = os.path.expanduser('~/harvester/etc/autopyfactory/autopyfactory.conf')
                     pqc.set(section, 'factoryconf', ac) 
@@ -165,8 +170,6 @@ class APFGridSubmitter(PluginBase):
                         wslist[i].batchID = jobinfo[i].jobid
                         wslist[i].set_status(WorkSpec.ST_submitted)
                         retlist.append((True, ''))
-                    
-                    
                 else:
                     self.log.info('No AGIS config found for PQ %s skipping.' % pq)        
 
