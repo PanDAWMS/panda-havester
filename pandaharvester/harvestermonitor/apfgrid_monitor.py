@@ -44,7 +44,15 @@ class APFGridMonitor(PluginBase):
         6 : WorkSpec.ST_ready,
         }   
 
-    # constructor
+    JOBQUERYATTRIBUTES =  ['match_apf_queue', 
+                          'jobstatus', 
+                          'workerid', 
+                          'apf_queue',
+                          'apf_logurl',
+                          'apf_outurl',
+                          'apf_errurl',
+                          ]
+
     def __init__(self, **kwarg):      
         PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
@@ -54,13 +62,21 @@ class APFGridMonitor(PluginBase):
         
     def _updateJobInfo(self):
         self.log.debug("Getting job info from Condor...")
-        #out = condorlib._querycondorlib(['match_apf_queue', 'jobstatus', 'workerid'])
-        out = condorlib.condor_q(['match_apf_queue', 'jobstatus', 'workerid'])
+        out = condorlib.condor_q(APFGridMonitor.JOBQUERYATTRIBUTES)
         self.log.debug("Got jobinfo %s" % out)
         self.jobinfo = out
-        out = condorlib.condor_history(attributes = ['workerid'], constraints=[])
+        out = condorlib.condor_history(attributes = APFGridMonitor.JOBQUERYATTRIBUTES, constraints=[])
         self.log.debug("Got history info %s" % out)
         self.historyinfo = out
+        alljobs = self.jobinfo + self.historyinfo
+        for jobad in alljobs:
+            try:
+                workerid = jobad[workerid]
+                self.allbyworkerid[workerid]= jobad      
+            except KeyError:
+                # some non-harvester jobs may not have workerids, ignore them
+                pass
+        self.log.debug("All jobs indexed by worker_id. %d entries." % len(self.allbyworkerid))
 
     # check workers
     def check_workers(self, workspec_list):
@@ -73,39 +89,25 @@ class APFGridMonitor(PluginBase):
         :param workspec_list: a list of work specs instances
         :return: A tuple of return code (True for success, False otherwise) and a list of worker's statuses.
         :rtype: (bool, [string,])
+   
         '''
         self.jobinfo = []
         self.historyinfo = []
+        self.allbyworkerid = {}
         self._updateJobInfo()
-                
+                    
         retlist = []
         for workSpec in workspec_list:
             self.log.debug("Worker(workerId=%s queueName=%s computingSite=%s status=%s )" % (workSpec.workerID, 
                                                                                workSpec.queueName,
                                                                                workSpec.computingSite, 
                                                                                workSpec.status) )
-            #newStatus = WorkSpec.ST_submitted
-            found = False
-            
-            alljobs = self.jobinfo + self.historyinfo
-            self.log.debug("%d jobs" % len(alljobs))
-            
-            for jobad in alljobs:
-                try:
-                    for item in jobad.keys():
-                        self.log.debug("%s = %s" % (item, jobad[item]))    
-                    if jobad['workerid'] == workSpec.workerID:
-                        self.log.debug("Found matching job: ID %s" % jobad['workerid'])
-                        found = True
-                        try:
-                            jobstatus = int(jobad['JobStatus'])
-                        except:
-                            self.log.error(traceback.format_exc(None))
-                            jobstatus = int(jobad['jobstatus'])
-                        retlist.append((APFGridMonitor.STATUS_MAP[jobstatus], ''))
-                except Exception, e:
-                    self.log.error(traceback.format_exc(None))
-            if not found:
+            try:
+                jobad = self.allbyworkerid(workSpec.workerID)
+                self.log.debug("Found matching job: ID %s" % jobad['workerid'])
+                jobstatus = int(jobad['jobstatus'])
+                retlist.append((APFGridMonitor.STATUS_MAP[jobstatus], ''))
+            except KeyError:   
                 self.log.error("No corresponding job for workspec %s" % workSpec)
                 retlist.append((WorkSpec.ST_cancelled, ''))
         self.log.debug('retlist=%s' % retlist)
