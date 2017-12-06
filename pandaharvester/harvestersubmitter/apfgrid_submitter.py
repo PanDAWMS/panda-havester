@@ -73,7 +73,7 @@ class APFGridSubmitter(PluginBase):
                 self.log.debug('LogServer thread started.')
             else:
                 self.log.info('LogServer disabled. Not running.')
-                    
+            APFGridSubmitter.instance = self        
             self.log.debug('APFGridSubmitter initialized.')       
 
 
