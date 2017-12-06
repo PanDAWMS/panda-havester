@@ -24,57 +24,53 @@ class APFGridSubmitter(PluginBase):
     agis = None
     logserver = None
     cleanlogs = None
-    instance = None
   
     def __init__(self, **kwarg):
-        if APFGridSubmitter.instance is not None:
-            self = APFGridSubmitter.instance
+        PluginBase.__init__(self, **kwarg)
+        self.log = core_utils.make_logger(baseLogger)
+        
+        self.config = Config()
+        factoryconffile = os.path.expanduser('~/harvester/etc/autopyfactory/autopyfactory.conf')
+        self.log.debug('Reading config: %s' % factoryconffile)
+        okread = self.config.read(factoryconffile)
+        self.log.debug('Successfully read %s' % okread)       
+
+        # Setup Authmanager
+        authconfigfile = os.path.expanduser(self.config.get('Factory','authConf'))
+        
+        ac = Config()
+        self.log.debug('Reading config: %s' % authconfigfile)
+        okread = ac.read(authconfigfile)
+        self.log.debug('Successfully read %s' % okread) 
+        if APFGridSubmitter.authman is None :
+            APFGridSubmitter.authman = AuthManager()
+            APFGridSubmitter.authman.reconfig(ac)
+        self.authman = APFGridSubmitter.authman           
+        APFGridSubmitter.authman.activate()
+
+        # Setup factory mock object. 
+        from autopyfactory.factory import Factory
+        if APFGridSubmitter.factorymock is None:
+            APFGridSubmitter.factorymock = Factory.getFactoryMock(fcl=self.config, am=self.authman)
+        
+        # Setup AGIS
+        if APFGridSubmitter.agis is None:
+            APFGridSubmitter.agisobj = Agis(None, self.config, None)
+        self.agisobj = APFGridSubmitter.agisobj
+        self.log.debug("AGIS object: %s" % self.agisobj)
+        
+        # Setup logserver
+        self.log.debug("Handling LogServer...")
+        if self.config.generic_get('Factory', 'logserver.enabled', 'getboolean'):
+            self.log.info("LogServer enabled. Initializing...")
+            self.logserver = LogServer(self.config)
+            self.log.info('LogServer initialized. Starting...')
+            self.logserver.start()
+            self.log.debug('LogServer thread started.')
         else:
-            PluginBase.__init__(self, **kwarg)
-            self.log = core_utils.make_logger(baseLogger)
-            
-            self.config = Config()
-            factoryconffile = os.path.expanduser('~/harvester/etc/autopyfactory/autopyfactory.conf')
-            self.log.debug('Reading config: %s' % factoryconffile)
-            okread = self.config.read(factoryconffile)
-            self.log.debug('Successfully read %s' % okread)       
-    
-            # Setup Authmanager
-            authconfigfile = os.path.expanduser(self.config.get('Factory','authConf'))
-            
-            ac = Config()
-            self.log.debug('Reading config: %s' % authconfigfile)
-            okread = ac.read(authconfigfile)
-            self.log.debug('Successfully read %s' % okread) 
-            if APFGridSubmitter.authman is None :
-                APFGridSubmitter.authman = AuthManager()
-                APFGridSubmitter.authman.reconfig(ac)
-            self.authman = APFGridSubmitter.authman           
-            APFGridSubmitter.authman.activate()
-    
-            # Setup factory mock object. 
-            from autopyfactory.factory import Factory
-            if APFGridSubmitter.factorymock is None:
-                APFGridSubmitter.factorymock = Factory.getFactoryMock(fcl=self.config, am=self.authman)
-            
-            # Setup AGIS
-            if APFGridSubmitter.agis is None:
-                APFGridSubmitter.agisobj = Agis(None, self.config, None)
-            self.agisobj = APFGridSubmitter.agisobj
-            self.log.debug("AGIS object: %s" % self.agisobj)
-            
-            # Setup logserver
-            self.log.debug("Handling LogServer...")
-            if self.config.generic_get('Factory', 'logserver.enabled', 'getboolean'):
-                self.log.info("LogServer enabled. Initializing...")
-                self.logserver = LogServer(self.config)
-                self.log.info('LogServer initialized. Starting...')
-                self.logserver.start()
-                self.log.debug('LogServer thread started.')
-            else:
-                self.log.info('LogServer disabled. Not running.')
-            APFGridSubmitter.instance = self        
-            self.log.debug('APFGridSubmitter initialized.')       
+            self.log.info('LogServer disabled. Not running.')
+        APFGridSubmitter.instance = self        
+        self.log.debug('APFGridSubmitter initialized.')       
 
 
     def _print_config(self, config):

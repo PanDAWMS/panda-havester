@@ -33,20 +33,15 @@ class APFGridSweeper(PluginBase):
                           'clusterid',
                           'procid'
                           ]
-    instance = None
     
     # constructor
     def __init__(self, **kwarg):
         PluginBase.__init__(self, **kwarg)
-        if APFGridSweeper.instance is not None:
-            self = APFGridSweeper.instance
-        else:
-            PluginBase.__init__(self, **kwarg)
-            self.log = core_utils.make_logger(baseLogger)
-            self.jobinfo = None
-            self.allbyworkerid = {}
-            APFGridSweeper.instance = self
-            self.log.debug('APFGridSweeper initialized.')        
+        self.log = core_utils.make_logger(baseLogger)
+        self.jobinfo = None
+        self.allbyworkerid = {}
+        APFGridSweeper.instance = self
+        self.log.debug('APFGridSweeper initialized.')        
 
     def _updateJobInfo(self):
         self.log.debug("Getting job info from Condor...")

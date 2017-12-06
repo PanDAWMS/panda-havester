@@ -33,7 +33,6 @@ class APFGridMonitor(PluginBase):
     5    Held       H
     6    Submission_err  E
     '''
-    instance = None 
     
     STATUS_MAP = {
         1 : WorkSpec.ST_submitted,
@@ -54,15 +53,12 @@ class APFGridMonitor(PluginBase):
                           ]
 
     def __init__(self, **kwarg):
-        if APFGridMonitor.instance is not None:
-            self = APFGridMonitor.instance
-        else:
-            PluginBase.__init__(self, **kwarg)
-            self.log = core_utils.make_logger(baseLogger)
-            self.jobinfo = None
-            self.historyinfo = None      
-            APFGridMonitor.instance = self
-            self.log.debug('APFGridMonitor initialized.')
+        PluginBase.__init__(self, **kwarg)
+        self.log = core_utils.make_logger(baseLogger)
+        self.jobinfo = None
+        self.historyinfo = None      
+        APFGridMonitor.instance = self
+        self.log.debug('APFGridMonitor initialized.')
         
     def _updateJobInfo(self):
         self.log.debug("Getting job info from Condor...")
