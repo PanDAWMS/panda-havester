@@ -39,7 +39,7 @@ class APFGridSweeper(PluginBase):
     def __init__(self, **kwarg):
         PluginBase.__init__(self, **kwarg)
         if APFGridSweeper.instance is not None:
-            return APFGridSweeper.instance
+            self = APFGridSweeper.instance
         else:
             PluginBase.__init__(self, **kwarg)
             self.log = core_utils.make_logger(baseLogger)

@@ -28,7 +28,7 @@ class APFGridSubmitter(PluginBase):
   
     def __init__(self, **kwarg):
         if APFGridSubmitter.instance is not None:
-            return APFGridSubmitter.instance
+            self = APFGridSubmitter.instance
         else:
             PluginBase.__init__(self, **kwarg)
             self.log = core_utils.make_logger(baseLogger)

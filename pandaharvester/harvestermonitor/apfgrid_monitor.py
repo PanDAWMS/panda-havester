@@ -55,7 +55,7 @@ class APFGridMonitor(PluginBase):
 
     def __init__(self, **kwarg):
         if APFGridMonitor.instance is not None:
-            return APFGridMonitor.instance
+            self = APFGridMonitor.instance
         else:
             PluginBase.__init__(self, **kwarg)
             self.log = core_utils.make_logger(baseLogger)
