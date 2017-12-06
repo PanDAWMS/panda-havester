@@ -53,12 +53,15 @@ class APFGridMonitor(PluginBase):
                           'apf_errurl',
                           ]
 
-    def __init__(self, **kwarg):      
-        PluginBase.__init__(self, **kwarg)
-        self.log = core_utils.make_logger(baseLogger)
-        self.jobinfo = None
-        self.historyinfo = None      
-        self.log.debug('APFGridMonitor initialized.')
+    def __init__(self, **kwarg):
+        if APFGridMonitor.instance is not None:
+            return APFGridMonitor.instance
+        else:
+            PluginBase.__init__(self, **kwarg)
+            self.log = core_utils.make_logger(baseLogger)
+            self.jobinfo = None
+            self.historyinfo = None      
+            self.log.debug('APFGridMonitor initialized.')
         
     def _updateJobInfo(self):
         self.log.debug("Getting job info from Condor...")
