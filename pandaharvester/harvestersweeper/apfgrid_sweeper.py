@@ -23,7 +23,7 @@ class APFGridSweeperSingleton(type):
 
     def __call__(self, *args, **kwargs):
         if self.__instance is None:
-            self.__instance = super(APFGridAPFGridSweeperSingleton, self).__call__(*args, **kwargs)
+            self.__instance = super(APFGridSweeperSingleton, self).__call__(*args, **kwargs)
         return self.__instance
 
 
