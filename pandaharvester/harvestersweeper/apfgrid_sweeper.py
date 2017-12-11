@@ -15,8 +15,21 @@ except ImportError:
 # setup base logger
 baseLogger = core_utils.setup_logger()
 
+
+class APFGridAPFGridSweeperSingleton(type):
+    def __init__(self, *args, **kwargs):
+        super(Singleton, self).__init__(*args, **kwargs)
+        self.__instance = None
+
+    def __call__(self, *args, **kwargs):
+        if self.__instance is None:
+            self.__instance = super(Singleton, self).__call__(*args, **kwargs)
+        return self.__instance
+
+
+
 # dummy plugin for sweeper
-class APFGridSweeper(PluginBase):
+class APFGridSweeper(object):
     STATUS_MAP = {
         1 : WorkSpec.ST_submitted,
         2 : WorkSpec.ST_running,

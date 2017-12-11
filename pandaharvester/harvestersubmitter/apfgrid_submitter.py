@@ -3,6 +3,7 @@ import logging
 import os
 import random
 import sys
+import threading
 
 from pandaharvester.harvestercore import core_utils
 from pandaharvester.harvestercore.plugin_base import PluginBase
@@ -16,17 +17,31 @@ from autopyfactory.logserver import LogServer
 
 # setup base logger
 baseLogger = core_utils.setup_logger()
+       
+class APFGridSubmitterSingleton(type):
+    def __init__(self, *args, **kwargs):
+        super(Singleton, self).__init__(*args, **kwargs)
+        self.__instance = None
 
-class APFGridSubmitter(PluginBase):
-    
+    def __call__(self, *args, **kwargs):
+        if self.__instance is None:
+            self.__instance = super(Singleton, self).__call__(*args, **kwargs)
+        return self.__instance
+
+
+class APFGridSubmitter(object):
+
+    __metaclass__ = APFGridSubmitterSingleton
+
     factorymock = None
     authman = None
     agis = None
     logserver = None
-    cleanlogs = None
-  
+    cleanlogs = None    
+
+   
     def __init__(self, **kwarg):
-        PluginBase.__init__(self, **kwarg)
+        #PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
         
         self.config = Config()

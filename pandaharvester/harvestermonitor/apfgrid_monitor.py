@@ -16,7 +16,18 @@ except ImportError:
 baseLogger = core_utils.setup_logger()
 
 
-class APFGridMonitor(PluginBase):
+class APFGridMonitorSingleton(type):
+    def __init__(self, *args, **kwargs):
+        super(Singleton, self).__init__(*args, **kwargs)
+        self.__instance = None
+
+    def __call__(self, *args, **kwargs):
+        if self.__instance is None:
+            self.__instance = super(Singleton, self).__call__(*args, **kwargs)
+        return self.__instance
+
+
+class APFGridMonitor(object):
     '''
     1  WorkSpec.ST_submitted = 'submitted'   
     2  WorkSpec.ST_running = 'running'       
@@ -33,7 +44,7 @@ class APFGridMonitor(PluginBase):
     5    Held       H
     6    Submission_err  E
     '''
-    
+    __metaclass__ = APFGridMonitorSingleton
     STATUS_MAP = {
         1 : WorkSpec.ST_submitted,
         2 : WorkSpec.ST_running,
