@@ -49,7 +49,7 @@ class APFGridSweeper(object):
     
     # constructor
     def __init__(self, **kwarg):
-        PluginBase.__init__(self, **kwarg)
+        #PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
         self.jobinfo = None
         self.allbyworkerid = {}

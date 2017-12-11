@@ -1,5 +1,6 @@
 import logging
 import sys
+import threading
 import traceback
 
 from pandaharvester.harvestercore import core_utils
@@ -64,7 +65,7 @@ class APFGridMonitor(object):
                           ]
 
     def __init__(self, **kwarg):
-        PluginBase.__init__(self, **kwarg)
+        #PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
         self.jobinfo = None
         self.historyinfo = None      
