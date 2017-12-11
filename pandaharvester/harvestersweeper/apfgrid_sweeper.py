@@ -30,6 +30,8 @@ class APFGridAPFGridSweeperSingleton(type):
 
 # dummy plugin for sweeper
 class APFGridSweeper(object):
+    __metaclass__ = APFGridSweeperSingleton
+    
     STATUS_MAP = {
         1 : WorkSpec.ST_submitted,
         2 : WorkSpec.ST_running,
@@ -49,11 +51,10 @@ class APFGridSweeper(object):
     
     # constructor
     def __init__(self, **kwarg):
-        #PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
         self.jobinfo = None
         self.allbyworkerid = {}
-        APFGridSweeper.instance = self
+
         self.log.debug('APFGridSweeper initialized.')        
 
     def _updateJobInfo(self):

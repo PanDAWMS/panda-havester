@@ -41,9 +41,7 @@ class APFGridSubmitter(object):
 
    
     def __init__(self, **kwarg):
-        #PluginBase.__init__(self, **kwarg)
         self.log = core_utils.make_logger(baseLogger)
-        
         self.config = Config()
         factoryconffile = os.path.expanduser('~/harvester/etc/autopyfactory/autopyfactory.conf')
         self.log.debug('Reading config: %s' % factoryconffile)
@@ -83,8 +81,7 @@ class APFGridSubmitter(object):
             self.logserver.start()
             self.log.debug('LogServer thread started.')
         else:
-            self.log.info('LogServer disabled. Not running.')
-        APFGridSubmitter.instance = self        
+            self.log.info('LogServer disabled. Not running.')     
         self.log.debug('APFGridSubmitter initialized.')       
 
 
