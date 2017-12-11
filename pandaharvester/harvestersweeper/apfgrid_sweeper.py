@@ -16,7 +16,7 @@ except ImportError:
 baseLogger = core_utils.setup_logger()
 
 
-class APFGridAPFGridSweeperSingleton(type):
+class APFGridSweeperSingleton(type):
     def __init__(self, *args, **kwargs):
         super(APFGridAPFGridSweeperSingleton, self).__init__(*args, **kwargs)
         self.__instance = None
