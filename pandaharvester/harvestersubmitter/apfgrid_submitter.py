@@ -20,7 +20,7 @@ baseLogger = core_utils.setup_logger()
        
 class APFGridSubmitterSingleton(type):
     def __init__(self, *args, **kwargs):
-        super(Singleton, self).__init__(*args, **kwargs)
+        super(APFGridSubmitterSingleton, self).__init__(*args, **kwargs)
         self.__instance = None
 
     def __call__(self, *args, **kwargs):

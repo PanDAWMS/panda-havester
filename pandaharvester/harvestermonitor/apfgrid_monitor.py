@@ -18,7 +18,7 @@ baseLogger = core_utils.setup_logger()
 
 class APFGridMonitorSingleton(type):
     def __init__(self, *args, **kwargs):
-        super(Singleton, self).__init__(*args, **kwargs)
+        super(APFGridMonitorSingleton, self).__init__(*args, **kwargs)
         self.__instance = None
 
     def __call__(self, *args, **kwargs):
