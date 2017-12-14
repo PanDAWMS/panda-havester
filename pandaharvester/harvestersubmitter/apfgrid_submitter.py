@@ -110,6 +110,17 @@ class APFGridSubmitter(object):
         and dialog message
         :rtype: [(bool, string),]
         
+        
+        For UPQ
+        PQ name, e.g.    HARVESTER_BNL_APF_TEST/MCORE
+        SCORE, SCORE_HIMEM, MCORE, and MCORE_HIMEM
+    
+        Workspec                     AGIS PQ/CEQ attribute. 
+        WorkSpec.minRamCount         PQ.memory
+        WorkSpec.nCore               PQ.corecount 
+        WorkSpec.maxDiskCount        PQ.maxwdir  
+        WorkSpec.maxWalltime         PQ.maxtime
+        
         '''
         self.log.debug('start nWorkers={0}'.format(len(workspec_list)))
         self.log.debug("Update AGIS info...")
