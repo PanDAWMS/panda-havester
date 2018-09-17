@@ -112,7 +112,7 @@ class FIFOBase:
         obj_serialized, score = self.fifo.peek()
         # retVal = (json.loads(obj_serialized, object_hook=as_python_object), score)
         if obj_serialized is None and score is None:
-            retVal = FifoObject(None, None, None)
+            retVal = FifoObject(None, None, time.time())
         else:
             if score is None:
                 score = time.time()
